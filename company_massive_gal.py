@@ -49,10 +49,10 @@ def bkg(mass_central, ra_central, cat_all_z_slice):
             # cut the satellite catalog
             mass_neighbors_rand = cat_neighbors_rand['MASS_BEST']
             mass_neighbors_sf_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]['MASS_BEST']
-            mass_neighbors_q_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]['MASS_BEST']
+            mass_neighbors_q_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] < -11]['MASS_BEST']
 
             #  total mass for satellites in blank pointings (all, sf & q)
-            total_mass_sat_rand += np.sum(10 ** (mass_neighbors_rand[mass_neighbors_rand>9] - 8))  # unit 10**8 M_sun
+            total_mass_sat_rand += np.sum(10 ** (mass_neighbors_rand[mass_neighbors_rand > 9] - 8))  # unit 10**8 M_sun
             total_mass_sat_sf_rand += np.sum(10 ** (mass_neighbors_sf_rand[mass_neighbors_sf_rand > 9] - 8))  # unit 10**8 M_sun
             total_mass_sat_q_rand += np.sum(10 ** (mass_neighbors_q_rand[mass_neighbors_q_rand > 9] - 8))  # unit 10**8 M_sun
 
@@ -72,9 +72,10 @@ for z in np.arange(0.3, 2.5, 0.1):
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT']-z)<0.1]  # massive galaxies in this z slice
     cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]  # all galaxies in this z slice
 
-    dis = Planck15.angular_diameter_distance(z).value
-    search_r = 0.5/dis/np.pi*180/0.17  # HSC plate scale 0.17 arcsec/pix
+    dis = Planck15.angular_diameter_distance(z).value  # angular diameter distance at redshift z
+    search_r = 0.5  #Mpc
 
+    # Fetch coordinated for massive gals
     cat_massive_z_slice['RA'].unit = u.deg
     cat_massive_z_slice['DEC'].unit = u.deg
     coord_massive_gal = SkyCoord.guess_from_table(cat_massive_z_slice)
@@ -85,7 +86,7 @@ for z in np.arange(0.3, 2.5, 0.1):
     id = cat_massive_z_slice[0]['ID']
     for gal in cat_massive_z_slice:
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(gal['RA'], gal['DEC'], unit="deg"), coord_massive_gal, nthneighbor=2)
-        if sep2d.degree < 0.5/dis/np.pi*180:
+        if sep2d.degree < search_r/dis/np.pi*180:
             if round(sep2d.degree[0], 5) == round(sep_angle, 5):
                 if gal['MASS_BEST'] > mass:
                     cat_massive_z_slice = cat_massive_z_slice[cat_massive_z_slice['ID'] != id]
@@ -111,9 +112,9 @@ for z in np.arange(0.3, 2.5, 0.1):
         mass_central = gal['MASS_BEST']
 
         # total mass of satellites (all, sf & q)
-        total_mass_sat += np.sum(10**(mass_neighbors[mass_neighbors>9] - 8))  # unit 10**8 M_sun
-        total_mass_sat_sf += np.sum(10**(mass_neighbors_sf[mass_neighbors_sf>9] - 8))  # unit 10**8 M_sun
-        total_mass_sat_q += np.sum(10**(mass_neighbors_q[mass_neighbors_q>9] - 8))  # unit 10**8 M_sun
+        total_mass_sat += np.sum(10**(mass_neighbors[mass_neighbors > 9] - 8))  # unit 10**8 M_sun
+        total_mass_sat_sf += np.sum(10**(mass_neighbors_sf[mass_neighbors_sf > 9] - 8))  # unit 10**8 M_sun
+        total_mass_sat_q += np.sum(10**(mass_neighbors_q[mass_neighbors_q > 9] - 8))  # unit 10**8 M_sun
 
         # satellite counts in mass bins
         count_gal, edges = np.histogram(10**(mass_neighbors-mass_central), np.arange(0, 1.01, 0.1))
@@ -147,6 +148,7 @@ for z in np.arange(0.3, 2.5, 0.1):
     plt.savefig('companion_counts_plots/'+str(z)+'.png')
     plt.close()
 
+    # output total sat masses
     total_mass_sat_log.write(str(z) + ' ' + str(round(total_mass_sat / len(cat_massive_z_slice))) +
                              ' '+ str(round(total_mass_sat_sf / len(cat_massive_z_slice))) +
                              ' ' + str(round(total_mass_sat_q / len(cat_massive_z_slice))) +'\n')
