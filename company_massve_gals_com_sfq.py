@@ -11,7 +11,7 @@ cat_gal = cat[cat['CLASS'] == 0]
 cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.3]
 
 
-def bkg(mass_central, ra_central, act='sf'):
+def bkg(mass_central, ra_central, cat_all_z_slice, act='sf'):
     '''
     return a background correction for each central galaxy
 
@@ -23,10 +23,18 @@ def bkg(mass_central, ra_central, act='sf'):
     n = 0
 
     while n < 20:
-        if ra_central > 100:
-            ra_rand, dec_rand = 149.6 + random() * 1.2, 1.5 + random() * 1.3
-        else:
-            ra_rand, dec_rand = 33.9 + random() * 1.4, -5.5 + random() * 1.3
+        same_field = False
+        while same_field == False:
+            id_rand = int(random()*len(cat_all_z_slice))
+            ra_rand = cat_all_z_slice[id_rand]['RA']
+            dec_rand = cat_all_z_slice[id_rand]['DEC']
+
+            if ra_rand > 100 and ra_central > 100:
+                same_field = True
+            elif ra_rand < 100 and ra_central < 100:
+                same_field = True
+            else:
+                same_field = False
 
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal,
                                                    nthneighbor=1)
@@ -108,14 +116,14 @@ for z in np.arange(0.5, 2.1, 0.5):
             # star-forming satellite galaxies
             count_gal_sf_sf, edges = np.histogram(10 ** (mass_neighbors_sf - mass_central), np.arange(0, 1.01, 0.1))
             count_gal_sf_sf = np.array(count_gal_sf_sf, dtype='float64')
-            count_gal_sf_sf -= bkg(mass_central, gal['RA'], act='sf')  # background/foreground correction
+            count_gal_sf_sf -= bkg(mass_central, gal['RA'], cat_all_z_slice, act='sf')  # background/foreground correction
             counts_gals_sf_sf += count_gal_sf_sf
             counts_sf_sf += 1
 
             # quiescent satellite galaxies
             count_gal_sf_q, edges = np.histogram(10 ** (mass_neighbors_q - mass_central), np.arange(0, 1.01, 0.1))
             count_gal_sf_q = np.array(count_gal_sf_q, dtype='float64')
-            count_gal_sf_q -= bkg(mass_central, gal['RA'], act='q')  # background/foreground correction
+            count_gal_sf_q -= bkg(mass_central, gal['RA'], cat_all_z_slice,  act='q')  # background/foreground correction
             counts_gals_sf_q += count_gal_sf_q
             counts_sf_q += 1
 
@@ -123,14 +131,14 @@ for z in np.arange(0.5, 2.1, 0.5):
             # quiescent satellite galaxies
             count_gal_q_q, edges = np.histogram(10 ** (mass_neighbors_q - mass_central), np.arange(0, 1.01, 0.1))
             count_gal_q_q = np.array(count_gal_q_q, dtype='float64')
-            count_gal_q_q -= bkg(mass_central, gal['RA'], act='q')  # background/foreground correction
+            count_gal_q_q -= bkg(mass_central, gal['RA'], cat_all_z_slice,  act='q')  # background/foreground correction
             counts_gals_q_q += count_gal_q_q
             counts_q_q += 1
 
             # star-forming satellite galaxies
             count_gal_q_sf, edges = np.histogram(10 ** (mass_neighbors_sf - mass_central), np.arange(0, 1.01, 0.1))
             count_gal_q_sf = np.array(count_gal_q_sf, dtype='float64')
-            count_gal_q_sf -= bkg(mass_central, gal['RA'], act='sf')  # background/foreground correction
+            count_gal_q_sf -= bkg(mass_central, gal['RA'], cat_all_z_slice,  act='sf')  # background/foreground correction
             counts_gals_q_sf += count_gal_q_sf
             counts_q_sf += 1
 
