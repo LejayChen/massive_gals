@@ -57,12 +57,12 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
             # retrieve mass info in sat catalog (all, sf & q)
             mass_neighbors_rand = cat_neighbors_rand['MASS_BEST']
             mass_neighbors_sf_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]['MASS_BEST']
-            mass_neighbors_q_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] < -11]['MASS_BEST']
+            # mass_neighbors_q_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] < -11]['MASS_BEST']
 
             # calculate total mass for satellites in blank pointings (all, sf & q)
             mass_sat_rand.append(np.sum(10 ** (mass_neighbors_rand[mass_neighbors_rand > 10] - 8)))  # unit 10**8 M_sun
             mass_sat_sf_rand.append(np.sum(10 ** (mass_neighbors_sf_rand[mass_neighbors_sf_rand > 10] - 8)))  # unit 10**8 M_sun
-            mass_sat_q_rand.append(np.sum(10 ** (mass_neighbors_q_rand[mass_neighbors_q_rand > 10] - 8)))   # unit 10**8 M_sun
+            # mass_sat_q_rand.append(np.sum(10 ** (mass_neighbors_q_rand[mass_neighbors_q_rand > 10] - 8)))   # unit 10**8 M_sun
             if len(mass_neighbors_rand[mass_neighbors_rand > 10]) == 0: continue
 
             # calculate satellite counts in mass bins in blank pointings
@@ -73,11 +73,11 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
     # stats
     total_mass_sat_rand = np.mean(mass_sat_rand)
     total_mass_sat_sf_rand = np.mean(mass_sat_sf_rand)
-    total_mass_sat_q_rand = np.mean(mass_sat_q_rand)
+    total_mass_sat_q_rand = total_mass_sat_rand - total_mass_sat_sf_rand
+
     std_mass_sat_rand = np.std(mass_sat_rand)
     std_mass_sat_sf_rand = np.std(mass_sat_sf_rand)
-    std_mass_sat_q_rand = np.std(mass_sat_q_rand)
-    # print(total_mass_sat_rand, std_mass_sat_rand)
+    std_mass_sat_q_rand = np.std(np.array(mass_sat_rand) - np.array(mass_sat_sf_rand))
 
     return counts_gals_rand/num_p, total_mass_sat_rand, total_mass_sat_sf_rand, total_mass_sat_q_rand,\
            std_mass_sat_rand, std_mass_sat_sf_rand,  std_mass_sat_q_rand
@@ -124,9 +124,8 @@ for z in np.arange(1.3, 1.4, 0.1):
         if gal['MASS_BEST'] < max(cat_neighbors['MASS_BEST']):  # exclude central gals which has larger mass companion
             massive_counts -= 1
             continue
-
         mass_neighbors_sf = cat_neighbors[cat_neighbors['SSFR_BEST'] > -11]['MASS_BEST']
-        mass_neighbors_q = cat_neighbors[cat_neighbors['SSFR_BEST'] < -11]['MASS_BEST']
+        # mass_neighbors_q = cat_neighbors[cat_neighbors['SSFR_BEST'] < -11]['MASS_BEST']
         mass_central = gal['MASS_BEST']
 
         # satellite counts in mass bins
@@ -134,11 +133,11 @@ for z in np.arange(1.3, 1.4, 0.1):
         count_gal_bkg, mass_sat_bkg, mass_sat_sf_bkg, mass_sat_q_bkg, std_mass_sat_bkg, std_mass_sat_sf_bkg, std_mass_sat_q_bkg = bkg(mass_central, gal['RA'], cat_all_z_slice, coord_massive_gal)
         counts_gals = counts_gals + (np.array(count_gal, dtype='float64') - count_gal_bkg)  # total sat_gal counts (binned with mass fraction)
 
-        # total mass of satellites (all, sf & q)
+        # total mass of satellites (all, sf & q; all=sf+q)
         # background substracted
         mass_sat.append(np.sum(10 ** (mass_neighbors[mass_neighbors > 10] - 8)) - mass_sat_bkg)  # unit 10**8 M_sun
         mass_sat_sf.append(np.sum(10 ** (mass_neighbors_sf[mass_neighbors_sf > 10] - 8)) - mass_sat_sf_bkg)  # unit 10**8 M_sun
-        mass_sat_q.append(np.sum(10 ** (mass_neighbors_q[mass_neighbors_q > 10] - 8)) - mass_sat_q_bkg)  # unit 10**8 M_sun
+        # mass_sat_q.append(np.sum(10 ** (mass_neighbors_q[mass_neighbors_q > 10] - 8)) - mass_sat_q_bkg)  # unit 10**8 M_sun
         stds_mass_sat_bkg.append(std_mass_sat_bkg)
         stds_mass_sat_sf_bkg.append(std_mass_sat_sf_bkg)
         stds_mass_sat_q_bkg.append(std_mass_sat_q_bkg)
@@ -147,7 +146,7 @@ for z in np.arange(1.3, 1.4, 0.1):
 
     total_mass_sat = np.mean(mass_sat)
     total_mass_sat_sf = np.mean(mass_sat_sf)
-    total_mass_sat_q = np.mean(mass_sat_q)
+    total_mass_sat_q = total_mass_sat - total_mass_sat_sf
 
     # averaged error in total mass of satellites
     # m = m_cen - m_bkg
@@ -155,7 +154,7 @@ for z in np.arange(1.3, 1.4, 0.1):
 
     std_mass_sat_total = np.sqrt(np.std(mass_sat)**2 + np.median(stds_mass_sat_bkg)**2)
     std_mass_sat_sf_total = np.sqrt(np.std(mass_sat_sf) ** 2 + np.median(stds_mass_sat_sf_bkg) ** 2)
-    std_mass_sat_q_total = np.sqrt(np.std(mass_sat_q) ** 2 + np.median(stds_mass_sat_q_bkg) ** 2)
+    std_mass_sat_q_total = np.sqrt(np.std(np.array(mass_sat) - np.array(mass_sat_sf)) ** 2 + np.median(stds_mass_sat_q_bkg) ** 2)
     print(np.std(mass_sat), np.median(stds_mass_sat_bkg), std_mass_sat_total)
 
     # ######## PLOT #########
