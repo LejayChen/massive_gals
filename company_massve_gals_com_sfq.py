@@ -41,8 +41,7 @@ def bkg(mass_central, ra_central, cat_all_z_slice, act='sf'):
 
         if sep2d.degree > 1.0 / dis / np.pi * 180:
             cat_neighbors_rand = cat_all_z_slice[
-                (cat_all_z_slice['RA'] - ra_rand) ** 2 + (cat_all_z_slice['DEC'] - dec_rand) ** 2 < (
-                0.5 / dis / np.pi * 180) ** 2]
+                (cat_all_z_slice['RA'] - ra_rand) ** 2 + (cat_all_z_slice['DEC'] - dec_rand) ** 2 < (0.5 / dis / np.pi * 180) ** 2]
 
             if act == 'sf':
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]
