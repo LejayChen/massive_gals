@@ -9,7 +9,7 @@ import numpy as np
 
 cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
 cat_gal = cat[cat['CLASS'] == 0]
-cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.3]
+cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11]
 
 
 def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
@@ -43,6 +43,7 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
             coord_all_z_slice_rand = SkyCoord(cat_all_z_slice_rand['RA']*u.deg, cat_all_z_slice_rand['DEC']*u.deg)
             coord_rand = SkyCoord(ra_rand*u.deg, dec_rand*u.deg)
             cat_neighbors_rand = cat_all_z_slice_rand[coord_all_z_slice_rand.separation(coord_rand).degree < 0.5/dis/np.pi*180]
+            if len(cat_neighbors_rand) == 0: continue  # no gals (in masked region)
 
             # retrieve mass info in sat catalog (all, sf & q)
             mass_neighbors_rand = cat_neighbors_rand['MASS_BEST']
@@ -51,8 +52,6 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
             # calculate total mass for satellites in blank pointings (all, sf & q)
             mass_sat_rand.append(np.sum(10 ** (mass_neighbors_rand[mass_neighbors_rand > 10] - 8)))  # unit 10**8 M_sun
             mass_sat_sf_rand.append(np.sum(10 ** (mass_neighbors_sf_rand[mass_neighbors_sf_rand > 10] - 8)))  # unit 10**8 M_sun
-
-            # if len(mass_neighbors_rand[mass_neighbors_rand > 10]) == 0: continue  # no gals exceed mass selection
 
             # calculate satellite counts in mass bins in blank pointings
             count_gal_rand, edges_rand = np.histogram(10 ** (mass_neighbors_rand - mass_cen), np.arange(0, 1.01, 0.1))
@@ -69,9 +68,12 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
 total_mass_sat_log = open('total_mass_sat', 'w')  # record total mass of satellites for redshift evolution
 for z in np.arange(0.3, 2.0, 0.1):
     print('============='+str(z)+'================')
-    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
-    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]  # all galaxies in this z slice
     dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
+    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
+    cat_massive_z_slice.sort('MASS_BEST')
+    print(int(dis**2/1.1e4))
+    cat_massive_z_slice = cat_massive_z_slice[-int(dis**2/1.1e4):] #select most massive ones (keep surface density constant in different redshift bins)
+    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]  # all galaxies in this z slice
 
     # Fetch coordinates for massive gals
     cat_massive_z_slice['RA'].unit = u.deg
