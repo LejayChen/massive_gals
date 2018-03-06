@@ -69,10 +69,18 @@ total_mass_sat_log = open('total_mass_sat', 'w')  # record total mass of satelli
 for z in np.arange(0.3, 2.0, 0.1):
     print('============='+str(z)+'================')
     dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
+    dis_l = WMAP9.comoving_distance(z - 0.1).value  # comoving distance at redshift z-0.1
+    dis_h = WMAP9.comoving_distance(z + 0.1).value  # comoving distance at redshift z+0.1
+    total_v = 4. / 3 * np.pi * (dis_h ** 3 - dis_l ** 3)  # Mpc^3
+    survey_v = total_v * 4 / 41253.05  # Mpc^3
+    density = 0.00003  # desired constant (cumulative) volume number density (Mpc^-3)
+    num = int(density * survey_v)
+
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
     cat_massive_z_slice.sort('MASS_BEST')
-    print(int(dis**2/1.1e4))
-    cat_massive_z_slice = cat_massive_z_slice[-int(dis**2/1.1e4):] #select most massive ones (keep surface density constant in different redshift bins)
+    cat_massive_z_slice.reverse()
+    cat_massive_z_slice = cat_massive_z_slice[:num] #select most massive ones (keep surface density constant in different redshift bins)
+
     cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]  # all galaxies in this z slice
 
     # Fetch coordinates for massive gals
