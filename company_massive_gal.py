@@ -79,7 +79,7 @@ for z in np.arange(0.3, 2.0, 0.1):
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
     cat_massive_z_slice.sort('MASS_BEST')
     cat_massive_z_slice.reverse()
-    cat_massive_z_slice = cat_massive_z_slice[:num] #select most massive ones (keep surface density constant in different redshift bins)
+    cat_massive_z_slice = cat_massive_z_slice[:num]  # select most massive ones (keep surface density constant in different redshift bins)
 
     cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]  # all galaxies in this z slice
 

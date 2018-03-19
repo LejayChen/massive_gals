@@ -7,7 +7,7 @@ import astropy.units as u
 
 cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
 cat_gal = cat[cat['CLASS'] == 0]
-cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.3]
+cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.0]
 
 
 def merge_est(r, m, z):
@@ -19,16 +19,41 @@ def merge_est(r, m, z):
 fig = plt.figure(figsize=(10, 8))
 plt.rc('font', family='serif'), plt.rc('xtick', labelsize=16), plt.rc('ytick', labelsize=16)
 
-for z in np.arange(0.3, 0.5, 0.1):
+
+mass_growth_file = open('mass_growth','w')
+for z in np.arange(0.3, 1.91, 0.1):
     print('=============' + str(z) + '================')
-    dis = WMAP9.angular_diameter_distance(z).value  # in Mpc
-    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]
+
+    dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
+    dis_l = WMAP9.comoving_distance(z - 0.1).value  # comoving distance at redshift z-0.1
+    dis_h = WMAP9.comoving_distance(z + 0.1).value  # comoving distance at redshift z+0.1
+    total_v = 4. / 3 * np.pi * (dis_h ** 3 - dis_l ** 3)  # Mpc^3
+    survey_v = total_v * 4 / 41253.05  # Mpc^3
+    density = 0.00003  # desired constant (cumulative) volume number density (Mpc^-3)
+    num = int(density * survey_v)
+
+    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
+    cat_massive_z_slice.sort('MASS_BEST')
+    cat_massive_z_slice.reverse()
+    cat_massive_z_slice = cat_massive_z_slice[:num]  # select most massive ones (keep surface density constant in different redshift bins)
+
     cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]
 
+
+    mass_growth_gal = []
     for gal in cat_massive_z_slice:
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
         coord_all_z_slice = SkyCoord(cat_all_z_slice['RA'] * u.deg, cat_all_z_slice['DEC'] * u.deg)
-        cat_neighbors = cat_all_z_slice[coord_all_z_slice.separation(coord_gal).degree < 0.5 / dis / np.pi * 180]
+        cat_neighbors = cat_all_z_slice[coord_all_z_slice.separation(coord_gal).degree < 0.05 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors[cat_neighbors['ID'] != gal['ID']]
+
+        if len(cat_neighbors) == 0:  # exlucde central gals which has no companion
+            continue
+
+        if gal['MASS_BEST'] < max(cat_neighbors['MASS_BEST']):  # exclude central gals which has larger mass companion
+            continue
+
+        # cat_neighbors = cat_neighbors[cat_neighbors['MASS_BEST']>8]
 
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         radius_list = coord_neighbors.separation(coord_gal).degree/180.*np.pi*dis*1000  # in kpc
@@ -36,21 +61,17 @@ for z in np.arange(0.3, 0.5, 0.1):
 
         t_merge_list = merge_est(radius_list, mass_list, z)
 
-        sort = t_merge_list.argsort()
-        t_merge_list = t_merge_list[sort[::1]]
-        mass_list = mass_list[sort[::1]]
+        # select companions that merge with central in the next redshift bin
+        t_merge_h = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z - 0.2).value
+        t_merge_l = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z).value
+        mass_list = mass_list[abs(t_merge_list-(t_merge_h+t_merge_l)/2.)< (t_merge_h-t_merge_l)/2.]
+        t_merge_list = t_merge_list[abs(t_merge_list-(t_merge_h+t_merge_l)/2.)< (t_merge_h-t_merge_l)/2.]
 
-        total_gal_mass = 10**(gal['MASS_BEST'] - 10)
-        lookback_time_list = []
-        gal_mass_list = []
-        for i in range(len(t_merge_list)):
-            lookback_time_list.append(WMAP9.lookback_time(z).value - t_merge_list[i])
-            total_gal_mass += 10**(mass_list[i] - 10)
-            gal_mass_list.append(total_gal_mass)
+        mass_growth_gal.append(sum(10**(mass_list-10)))
 
-        plt.plot(lookback_time_list, gal_mass_list,alpha=0.5)
-        plt.plot(lookback_time_list[0], gal_mass_list[0], 'o', markersize=5)
+    mass_growth_z_median = np.median(mass_growth_gal)
+    mass_growth_z_mean = np.mean(mass_growth_gal)
+    mass_growth_file.write(str(mass_growth_z_mean)+'\n')
+    print(mass_growth_z_mean)
 
-plt.xlabel('Lookback Time', fontsize=15)
-plt.ylabel('Cumulative Mass (M_sun)', fontsize=15)
-plt.show()
+mass_growth_file.close()
