@@ -16,6 +16,13 @@ def merge_est(r, m, z):
     return np.array(t_merge)
 
 
+def merge_est2(r, m_sat, m_cen):
+    m_sat = 10**(m_sat - 10)
+    m_cen = 10 ** (m_cen - 10)
+    t_merge = (0.94*0.5**0.6+0.6)/0.86*m_cen/m_sat*1/(1+m_cen/m_sat)*r/860.
+    return np.array(t_merge)
+
+
 fig = plt.figure(figsize=(10, 8))
 plt.rc('font', family='serif'), plt.rc('xtick', labelsize=16), plt.rc('ytick', labelsize=16)
 
@@ -46,6 +53,8 @@ for z in np.arange(0.3, 1.91, 0.1):
         coord_all_z_slice = SkyCoord(cat_all_z_slice['RA'] * u.deg, cat_all_z_slice['DEC'] * u.deg)
         cat_neighbors = cat_all_z_slice[coord_all_z_slice.separation(coord_gal).degree < 0.05 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[cat_neighbors['ID'] != gal['ID']]
+        cat_neighbors = cat_neighbors[cat_neighbors['MASS_BEST']>9]
+
 
         if len(cat_neighbors) == 0:  # exlucde central gals which has no companion
             continue
@@ -59,13 +68,13 @@ for z in np.arange(0.3, 1.91, 0.1):
         radius_list = coord_neighbors.separation(coord_gal).degree/180.*np.pi*dis*1000  # in kpc
         mass_list = cat_neighbors['MASS_BEST']
 
-        t_merge_list = merge_est(radius_list, mass_list, z)
+        # t_merge_list = merge_est(radius_list, mass_list, z)
+        t_merge_list = merge_est2(radius_list, mass_list, gal['MASS_BEST'])
 
         # select companions that merge with central in the next redshift bin
         t_merge_h = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z - 0.2).value
         t_merge_l = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z).value
         mass_list = mass_list[abs(t_merge_list-(t_merge_h+t_merge_l)/2.)< (t_merge_h-t_merge_l)/2.]
-        t_merge_list = t_merge_list[abs(t_merge_list-(t_merge_h+t_merge_l)/2.)< (t_merge_h-t_merge_l)/2.]
 
         mass_growth_gal.append(sum(10**(mass_list-10)))
 
