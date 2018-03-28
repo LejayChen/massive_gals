@@ -22,9 +22,9 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
     mass_sat_rand = []
     mass_sat_sf_rand = []
     n = 0
-    num_p = 10  # number of blank pointings
+    num_p = 10  # number of blank pointing's
 
-    while n < num_p:  # get several blank pointings to estimate background
+    while n < num_p:  # get several blank pointing's to estimate background
         same_field = False  # find a random pointing in the same field as the central galaxy
         while not same_field:
             id_rand = int(random()*len(cat_all_z_slice_rand))
@@ -43,17 +43,18 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
             coord_all_z_slice_rand = SkyCoord(cat_all_z_slice_rand['RA']*u.deg, cat_all_z_slice_rand['DEC']*u.deg)
             coord_rand = SkyCoord(ra_rand*u.deg, dec_rand*u.deg)
             cat_neighbors_rand = cat_all_z_slice_rand[coord_all_z_slice_rand.separation(coord_rand).degree < 0.6/dis/np.pi*180]
-            if len(cat_neighbors_rand) == 0: continue  # no gals (in masked region)
+            if len(cat_neighbors_rand) == 0:
+                continue  # no gals (in masked region)
 
             # retrieve mass info in sat catalog (all, sf & q)
             mass_neighbors_rand = cat_neighbors_rand['MASS_BEST']
             mass_neighbors_sf_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]['MASS_BEST']
 
-            # calculate total mass for satellites in blank pointings (all, sf & q)
+            # calculate total mass for satellites in blank pointing's (all, sf & q)
             mass_sat_rand.append(np.sum(10 ** (mass_neighbors_rand[mass_neighbors_rand > 10] - 8)))  # unit 10**8 M_sun
             mass_sat_sf_rand.append(np.sum(10 ** (mass_neighbors_sf_rand[mass_neighbors_sf_rand > 10] - 8)))  # unit 10**8 M_sun
 
-            # calculate satellite counts in mass bins in blank pointings
+            # calculate satellite counts in mass bins in blank pointing's
             count_gal_rand, edges_rand = np.histogram(10 ** (mass_neighbors_rand - mass_cen), np.arange(0, 1.01, 0.1))
             counts_gals_rand += count_gal_rand
 
@@ -66,7 +67,7 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
 
 # ################### MAIN FUNCTION ################### #
 total_mass_sat_log = open('total_mass_sat', 'w')  # record total mass of satellites for redshift evolution
-for z in np.arange(0.9, 0.91, 0.1):
+for z in np.arange(0.3, 2.0, 0.1):
     print('============='+str(z)+'================')
     dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
     dis_l = WMAP9.comoving_distance(z - 0.1).value  # comoving distance at redshift z-0.1
@@ -92,8 +93,8 @@ for z in np.arange(0.9, 0.91, 0.1):
     # __init__
     counts_gals = np.zeros(10)
     massive_counts = len(cat_massive_z_slice)
-    SMF_z = np.zeros(50)
-    SMF_z_bkg = np.zeros(50)
+    SMF_z = np.zeros(10)
+    SMF_z_bkg = np.zeros(10)
     mass_sat = []  # contains mass of sats
     mass_sat_sf = []
     cylinder_length = 1.5 * 0.03 * (1 + z)  # half cylinder height centered at one central galaxy
@@ -125,17 +126,23 @@ for z in np.arange(0.9, 0.91, 0.1):
         count_gal, edges = np.histogram(10**(mass_neighbors - mass_central), np.arange(0, 1.01, 0.1))
         mass_neighbors_bkg, count_gal_bkg, mass_sat_bkg, mass_sat_sf_bkg = bkg(mass_central, gal['RA'], np.copy(cat_neighbors_z_slice), coord_massive_gal)
         counts_gals = counts_gals + (np.array(count_gal, dtype='float64') - count_gal_bkg)  # total sat_gal counts (binned with mass fraction)
-        # SMF_z += np.histogram(mass_neighbors, bins=50, range=(10., 12.))[0]
-        # SMF_z_bkg += np.histogram(mass_neighbors_bkg, bins=50, range=(10., 12.))[0]
+        SMF_z += np.histogram(mass_neighbors, bins=10, range=(10., 12.))[0]
+        SMF_z_bkg += np.histogram(mass_neighbors_bkg, bins=10, range=(10., 12.))[0]
 
         # ### total mass of satellites (all, sf & q; all=sf+q)
         # background subtracted
         mass_sat.append(np.sum(10 ** (mass_neighbors[mass_neighbors > 10] - 8)) - mass_sat_bkg)  # unit 10**8 M_sun
         mass_sat_sf.append(np.sum(10 ** (mass_neighbors_sf[mass_neighbors_sf > 10] - 8)) - mass_sat_sf_bkg)  # unit 10**8 M_sun
 
-    # plt.plot(np.arange(10, 12, 0.04), SMF_z)
-    # plt.plot(np.arange(10, 12, 0.04), SMF_z_bkg)
-    # plt.show()
+    plt.figure(figsize=(7, 6))
+    plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
+    plt.plot(np.arange(10, 12, 2./10), SMF_z, '-o', alpha=0.4)
+    plt.plot(np.arange(10, 12, 2./10), SMF_z_bkg, '-o', alpha=0.4)
+    plt.plot(np.arange(10, 12, 2. / 10), SMF_z - SMF_z_bkg, '-o')
+    plt.xlabel('mass', fontsize=14)
+    plt.ylabel('number density', fontsize=14)
+    plt.savefig('SMFs/smf_'+str(z)+'.png')
+    plt.close()
 
     # averaged total mass of satellites
     # bootstrap sample to get variation on total mass of satellites
@@ -152,9 +159,8 @@ for z in np.arange(0.9, 0.91, 0.1):
 
     # ######## PLOT #########
     # plot sat counts against mass fraction M/M_central
-    np.set_printoptions(precision=4)
+    np.set_printoptions(precision=2)
     fig = plt.figure(figsize=(7, 6))
-    plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
     plt.errorbar(x=np.arange(0, 0.91, 0.1)+0.05, y=counts_gals/massive_counts, yerr=np.sqrt(counts_gals)/massive_counts, fmt='.k', markersize=16, capsize=3, elinewidth=1)
     plt.ylabel('neighbor counts', fontsize=16)
     plt.xlabel(r'$M_{sat}/M_{central}$', fontsize=16)

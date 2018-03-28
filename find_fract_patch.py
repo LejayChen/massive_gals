@@ -2,13 +2,14 @@ from astropy.table import Table
 from astropy.io import fits
 from cutout import *
 from astropy import wcs
+from astropy.cosmology import WMAP9
 import matplotlib.pyplot as plt
-from astropy.nddata import Cutout2D
+import numpy as np
+import aplpy
 
-cat = Table.read('CUT_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
+cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
 cat_gal = cat[cat['CLASS'] == 0]
 cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.3]
-cat_gal_1416 = cat_massive_gal[abs(cat_massive_gal['ZPHOT']-0.5) < 0.1]
 
 
 def find_patch(ra, dec, field='COSMOS'):
@@ -17,40 +18,55 @@ def find_patch(ra, dec, field='COSMOS'):
 
     cat_patches = Table.read('tracts_patches/'+field+'_patches.fits')
     for patch in cat_patches:
-        if ra < patch['corner0_ra'] and ra > patch['corner1_ra'] and \
-           dec < patch['corner2_dec'] and dec > patch['corner1_dec']:
-
+        if ra < patch['corner0_ra'] and ra > patch['corner1_ra'] and dec < patch['corner2_dec'] and dec > patch['corner1_dec']:
             return str(patch['patch'])[0:-2], str(patch['patch'])[-2:]
 
     return 0, 0
 
-for gal in cat_gal_1416:
-    if gal['RA'] > 100:
-        tract, patch = find_patch(gal['RA'], gal['DEC'])
-    else:
-        tract, patch = find_patch(gal['RA'], gal['DEC'], field='XMM-LSS')
+# main function
+for z in np.arange(0.3, 0.31, 0.1):
+    print('============='+str(z)+'================')
+    dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
+    dis_l = WMAP9.comoving_distance(z - 0.1).value  # comoving distance at redshift z-0.1
+    dis_h = WMAP9.comoving_distance(z + 0.1).value  # comoving distance at redshift z+0.1
+    total_v = 4. / 3 * np.pi * (dis_h ** 3 - dis_l ** 3)  # Mpc^3
+    survey_v = total_v * (4 / 41253.05)  # Mpc^3
+    density = 0.00003  # desired constant (cumulative) volume number density (Mpc^-3)
+    num = int(density * survey_v)
 
-    print(gal['ID'], gal['RA'], gal['DEC'], tract, patch)
+    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.1]  # massive galaxies in this z slice
+    cat_massive_z_slice.sort('MASS_BEST')
+    cat_massive_z_slice.reverse()
+    cat_massive_z_slice = cat_massive_z_slice[:num]
 
-    if tract != 0:
-        try:
-            image = fits.open('/media/lejay/Elements/HSC-Z/'+tract+'/'+patch[0]+','+patch[1]+'/'+'calexp-HSC-Z-'+tract+'-'+patch[0]+','+patch[1]+'.fits')
-            w = wcs.WCS(image[1].header)
-            x, y = w.wcs_world2pix(gal['RA'], gal['DEC'], 0)
-            cutout = Cutout2D(image[1].data, (x, y), (100, 100), mode='partial', wcs=w)
-            plt.imshow(cutout.data, origin='lower')
-            plt.title(str(round(gal['RA'],5))+' '+str(round(gal['DEC'],5))+' '+str(gal['z']))
-            plt.savefig('cutout_images/low_z/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.png')
+    for gal in cat_massive_z_slice:
+        if gal['RA'] > 100:
+            tract, patch = find_patch(gal['RA'], gal['DEC'])
+        else:
+            tract, patch = find_patch(gal['RA'], gal['DEC'], field='XMM-LSS')
 
-            cutoutimg('/media/lejay/Elements/HSC-Z/'+tract+'/'+patch[0]+','+patch[1]+'/'+'calexp-HSC-Z-'+tract+'-'+patch[0]+','+patch[1]+'.fits', gal['RA'], gal['DEC'], xw=10./3600, yw=10./3600, units='wcs', outfile='cutout_images/low_z/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.fits')
+        print(gal['ID'], gal['RA'], gal['DEC'], tract, patch)
 
-        except FileNotFoundError:
-            print('image file for '+tract+' '+patch+' not found!')
-            continue
+        if tract != 0:
+            try:
+                image = fits.open('/media/lejay/Elements/HSC-Z/'+tract+'/'+patch[0]+','+patch[1]+'/'+'calexp-HSC-Z-'+tract+'-'+patch[0]+','+patch[1]+'.fits')
+                w = wcs.WCS(image[1].header)
+                x, y = w.wcs_world2pix(gal['RA'], gal['DEC'], 0)
+                cutoutimg('/media/lejay/Elements/HSC-Z/'+tract+'/'+patch[0]+','+patch[1]+'/'+'calexp-HSC-Z-'+tract+'-'+patch[0]+','+patch[1]+'.fits', gal['RA'], gal['DEC'], xw=10./3600, yw=10./3600, units='wcs', outfile='cutout_images/'+str(z)+'/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.fits')
 
+            except FileNotFoundError:
+                print('image file for '+tract+' '+patch+' not found!')
+                continue
 
-
-
+            plt.rc('font', family='serif'), plt.rc('xtick', labelsize=12), plt.rc('ytick', labelsize=12)
+            fig = aplpy.FITSFigure('cutout_images/'+str(z)+'/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.fits')
+            fig.show_grayscale(stretch='arcsinh')
+            fig.add_scalebar(0.02/dis/np.pi*180, label='20 kpc',linewidth=2)
+            fig.add_label(0.1, 0.95, 'ID='+str(gal['ID']), relative=True)
+            fig.add_label(0.1, 0.9, 'Z=' + str(gal['ZPHOT']), relative=True)
+            fig.set_theme('publication')
+            fig.save('cutout_images/'+str(z)+'/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.png')
+            fig.close()
 
 
 
