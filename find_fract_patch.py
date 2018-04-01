@@ -61,51 +61,15 @@ for z in np.arange(0.3, 0.31, 0.1):
             plt.rc('font', family='serif'), plt.rc('xtick', labelsize=12), plt.rc('ytick', labelsize=12)
             fig = aplpy.FITSFigure('cutout_images/'+str(z)+'/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.fits')
             fig.show_grayscale(stretch='arcsinh')
-            fig.add_scalebar(0.02/dis/np.pi*180, label='20 kpc',linewidth=2)
-            fig.add_label(0.1, 0.95, 'ID='+str(gal['ID']), relative=True)
-            fig.add_label(0.1, 0.9, 'Z=' + str(gal['ZPHOT']), relative=True)
+            fig.add_scalebar(0.02/dis/np.pi*180, label='20 kpc')
+            fig.show_contour(levels=10,colors='y',alpha=0.4)
+            fig.add_label(0.1, 0.95, 'ID='+str(gal['ID']), relative=True, fontsize=12)
+            fig.add_label(0.1, 0.9, 'Z=' + str(gal['ZPHOT']), relative=True, fontsize=12)
+            if gal['SSFR_BEST'] > -11:
+                fig.add_label(0.1, 0.85, 'Star Forming', relative=True, fontsize=12, color='b')
+            else:
+                fig.add_label(0.1, 0.85, 'Quiescent', relative=True, fontsize=12, color='r')
+            fig.add_label(0.11, 0.8, 'log(M)=' + str(round(gal['MASS_BEST'],2)), relative=True, fontsize=12)
             fig.set_theme('publication')
             fig.save('cutout_images/'+str(z)+'/cutout-'+tract+'-'+patch[0]+','+patch[1]+'_'+str(gal['ID'])+'.png')
             fig.close()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

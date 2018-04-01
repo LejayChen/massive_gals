@@ -1,8 +1,11 @@
+# output mass_growth file
+
 from astropy.table import Table
 import matplotlib.pyplot as plt
 import numpy as np
 from astropy.cosmology import WMAP9
 from astropy.coordinates import SkyCoord
+from random import random
 import astropy.units as u
 
 cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
@@ -10,24 +13,61 @@ cat_gal = cat[cat['CLASS'] == 0]
 cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.0]
 
 
-def merge_est(r, m, z):
-    m = 10**(m - 10)
-    t_merge = 3.2*(r/50.)*(m/4)**(-0.3)*(1+z/20.)
+def bkg(ra_central, cat_all_z_slice_rand, t_merge_h_rand, t_merge_l_rand, z):
+    n = 0
+    num_p = 10
+    mass_z_rand = []
+    while n < num_p:  # get several blank pointing's to estimate background
+        same_field = False  # find a random pointing in the same field as the central galaxy
+        while not same_field:
+            id_rand = int(random()*len(cat_all_z_slice_rand))
+            ra_rand = cat_all_z_slice_rand[id_rand]['RA']
+            dec_rand = cat_all_z_slice_rand[id_rand]['DEC']
+            if ra_rand > 100 and ra_central > 100:
+                same_field = True
+            elif ra_rand < 100 and ra_central < 100:
+                same_field = True
+            else:
+                same_field = False
+
+        # construct neighbors catalog
+        coord_all_z_slice_rand = SkyCoord(cat_all_z_slice_rand['RA'] * u.deg, cat_all_z_slice_rand['DEC'] * u.deg)
+        cat_neighbors_rand = cat_all_z_slice_rand[coord_all_z_slice_rand.separation(coord_gal).degree<0.08/dis/np.pi*180]
+        cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['ID'] != id_rand]
+        cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['MASS_BEST'] > 9]
+
+        coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
+        radius_list_rand = coord_neighbors_rand.separation(SkyCoord(ra_rand*u.deg,dec_rand*u.deg)).degree/180.*np.pi*dis*1000
+        mass_list_rand = cat_neighbors_rand['MASS_BEST']
+
+        t_merge_list_rand = merge_est_k(radius_list_rand, mass_list_rand, z)
+        # t_merge_list_rand = merge_est_j(radius_list_rand, mass_list_rand, z)
+        mass_list_rand = mass_list_rand[abs(t_merge_list_rand - (t_merge_h_rand + t_merge_l_rand) / 2.) < (t_merge_h_rand - t_merge_l_rand) / 2.]
+        mass_z_rand.append(sum(10**(mass_list_rand-10)))
+
+        # if len(mass_list_rand)!=0: print(len(mass_list_rand))
+        n = n + 1
+
+    return np.mean(mass_z_rand)
+
+
+def merge_est_k(r, m_cen, z):
+    m = 10 ** (m_cen - 10)
+    h = 0.7
+    t_merge = 3.2*(r/50.)*(m/4*h)**(-0.3)*(1+z/20.)
     return np.array(t_merge)
 
 
-def merge_est2(r, m_sat, m_cen):
-    m_sat = 10**(m_sat - 10)
+def merge_est_j(r, m_sat, m_cen):
+    m_sat = 10 ** (m_sat - 10)
     m_cen = 10 ** (m_cen - 10)
-    t_merge = (0.94*0.5**0.6+0.6)/0.86*m_cen/m_sat*1/(1+m_cen/m_sat)*r/860.
+    t_merge = (0.94*0.5**0.6+0.6)/0.86 * (m_cen/m_sat) * (1/np.log(1+m_cen/m_sat)) * r/860.
     return np.array(t_merge)
 
 
 fig = plt.figure(figsize=(10, 8))
 plt.rc('font', family='serif'), plt.rc('xtick', labelsize=16), plt.rc('ytick', labelsize=16)
-
-
-mass_growth_file = open('mass_growth','w')
+mass_growth_file = open('mass_growth', 'w')
 for z in np.arange(0.3, 1.91, 0.1):
     print('=============' + str(z) + '================')
 
@@ -46,17 +86,15 @@ for z in np.arange(0.3, 1.91, 0.1):
 
     cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.1]
 
-
     mass_growth_gal = []
     for gal in cat_massive_z_slice:
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
         coord_all_z_slice = SkyCoord(cat_all_z_slice['RA'] * u.deg, cat_all_z_slice['DEC'] * u.deg)
-        cat_neighbors = cat_all_z_slice[coord_all_z_slice.separation(coord_gal).degree < 0.05 / dis / np.pi * 180]
+        cat_neighbors = cat_all_z_slice[coord_all_z_slice.separation(coord_gal).degree < 0.08 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[cat_neighbors['ID'] != gal['ID']]
-        cat_neighbors = cat_neighbors[cat_neighbors['MASS_BEST']>9]
+        cat_neighbors = cat_neighbors[cat_neighbors['MASS_BEST'] > 9]
 
-
-        if len(cat_neighbors) == 0:  # exlucde central gals which has no companion
+        if len(cat_neighbors) == 0:  # exclude central gals which has no companion
             continue
 
         if gal['MASS_BEST'] < max(cat_neighbors['MASS_BEST']):  # exclude central gals which has larger mass companion
@@ -68,15 +106,15 @@ for z in np.arange(0.3, 1.91, 0.1):
         radius_list = coord_neighbors.separation(coord_gal).degree/180.*np.pi*dis*1000  # in kpc
         mass_list = cat_neighbors['MASS_BEST']
 
-        # t_merge_list = merge_est(radius_list, mass_list, z)
-        t_merge_list = merge_est2(radius_list, mass_list, gal['MASS_BEST'])
+        t_merge_list = merge_est_k(radius_list, mass_list, z)
+        # t_merge_list = merge_est_j(radius_list, mass_list, gal['MASS_BEST'])
 
         # select companions that merge with central in the next redshift bin
         t_merge_h = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z - 0.2).value
         t_merge_l = WMAP9.lookback_time(gal['ZPHOT']).value - WMAP9.lookback_time(z).value
         mass_list = mass_list[abs(t_merge_list-(t_merge_h+t_merge_l)/2.)< (t_merge_h-t_merge_l)/2.]
-
-        mass_growth_gal.append(sum(10**(mass_list-10)))
+        mass_growth_bkg = bkg(gal['RA'], cat_all_z_slice, t_merge_h, t_merge_l, z)
+        mass_growth_gal.append(sum(10**(mass_list-10)) - mass_growth_bkg)
 
     mass_growth_z_median = np.median(mass_growth_gal)
     mass_growth_z_mean = np.mean(mass_growth_gal)

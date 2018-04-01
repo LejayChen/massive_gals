@@ -18,7 +18,7 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
     mass_central: mass of the central galaxy,  ra_central: ra value for central galaxy. if ra_central>100, gal in COSMOS, if ra_central<100, gal in XMM-LSS
     '''
     # __init__
-    counts_gals_rand = 0
+    counts_gals_rand = np.zeros(10)
     mass_sat_rand = []
     mass_sat_sf_rand = []
     n = 0
