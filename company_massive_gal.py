@@ -29,8 +29,8 @@ def bkg(mass_cen, ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
         same_field = False  # find a random pointing in the same field as the central galaxy
         while not same_field:
             id_rand = int(random()*len(cat_all_z_slice_rand))
-            ra_rand = cat_all_z_slice_rand[id_rand]['RA'] + random()*1.5/dis/np.pi*180
-            dec_rand = cat_all_z_slice_rand[id_rand]['DEC'] + random()*1.5/dis/np.pi*180
+            ra_rand = cat_all_z_slice_rand[id_rand]['RA'] + random()*2.0/dis/np.pi*180
+            dec_rand = cat_all_z_slice_rand[id_rand]['DEC'] + random()*2.0/dis/np.pi*180
             if ra_rand > 100 and ra_central > 100:
                 same_field = True
             elif ra_rand < 100 and ra_central < 100:
@@ -83,13 +83,12 @@ for z in np.arange(3, 20, 1)/10.:
     cat_massive_z_slice.reverse()
     cat_massive_z_slice = cat_massive_z_slice[:num]  # select most massive ones (keep surface density constant in different redshift bins)
 
-    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.2]  # all galaxies in this z slice
+    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.2]  # all galaxies in this z slice (large than delta z, will be cut further)
 
     # Fetch coordinates for massive gals
     cat_massive_z_slice['RA'].unit = u.deg
     cat_massive_z_slice['DEC'].unit = u.deg
     coord_massive_gal = SkyCoord.guess_from_table(cat_massive_z_slice)
-
 
     # counting neighbors and calculating total mass of neighbors for each massive central galaxy
     # __init__
@@ -100,7 +99,8 @@ for z in np.arange(3, 20, 1)/10.:
     mass_sat = []  # contains mass of sats
     mass_sat_sf = []
     cylinder_length = 1.5 * 0.03 * (1 + z)  # half cylinder height centered at one central galaxy
-    isolated_counts = 0
+    isolated_counts = 0  # massive gals with no detected companions
+    counts_gals_z = []  # pair counts for each massive gal
     for gal in cat_massive_z_slice:
         # cut the z_slice catalog to get neighbors catalog
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
@@ -129,7 +129,7 @@ for z in np.arange(3, 20, 1)/10.:
         count_gal, edges = np.histogram(10**(mass_neighbors - mass_central), np.arange(0, 1.01, 0.1))
         mass_neighbors_bkg, count_gal_bkg, mass_sat_bkg, mass_sat_sf_bkg = bkg(mass_central, gal['RA'], np.copy(cat_neighbors_z_slice), coord_massive_gal)
         counts_gals = counts_gals + (np.array(count_gal, dtype='float64') - count_gal_bkg)  # total sat_gal counts (binned with mass fraction)
-        if sum(counts_gals[1:])<1: isolated_counts += 1
+        counts_gals_z.append(sum(np.array(count_gal, dtype='float64') - count_gal_bkg))
 
         SMF_z += np.histogram(mass_neighbors, bins=10, range=(10., 12.))[0]
         SMF_z_bkg += np.histogram(mass_neighbors_bkg, bins=10, range=(10., 12.))[0]
@@ -139,6 +139,7 @@ for z in np.arange(3, 20, 1)/10.:
         mass_sat.append(np.sum(10 ** (mass_neighbors[mass_neighbors > 10] - 8)) - mass_sat_bkg)  # unit 10**8 M_sun
         mass_sat_sf.append(np.sum(10 ** (mass_neighbors_sf[mass_neighbors_sf > 10] - 8)) - mass_sat_sf_bkg)  # unit 10**8 M_sun
 
+    # ##################################  PLOT STELLAR MASS FUNCTIONS
     # plt.figure(figsize=(7, 6))
     # plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
     # plt.plot(np.arange(10, 12, 2./10), SMF_z, '-o', alpha=0.4)
@@ -148,6 +149,14 @@ for z in np.arange(3, 20, 1)/10.:
     # plt.ylabel('number density', fontsize=14)
     # plt.savefig('SMFs/smf_'+str(z)+'.png')
     # plt.close()
+
+    # ################################ PLOT PAIR COUNTS DISTRIBUTION
+    plt.figure(figsize=(7, 6))
+    plt.hist(counts_gals_z, histtype='step')
+    plt.xlabel('Total number of companions per Central', fontsize=14)
+    plt.ylabel('Central counts in each bin', fontsize=14)
+    plt.savefig('companion_counts_plots/pair_count_'+str(round(z,1))+'.png')
+    plt.close()
 
     # averaged total mass of satellites
     # bootstrap sample to get variation on total mass of satellites
