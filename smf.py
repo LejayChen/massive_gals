@@ -8,7 +8,7 @@ import numpy as np
 
 cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
 cat_gal = cat[cat['CLASS'] == 0]
-cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.1]
+cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.15]
 
 
 def bkg(ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
@@ -45,12 +45,12 @@ def bkg(ra_central, cat_all_z_slice_rand, coord_massive_gal_rand):
 
     return mass_neighbors_rand
 
-bin_counts = 30
+bin_counts = 60
 for z in np.arange(7, 7.1, 1)/10.:
     print('============='+str(z)+'================')
     dis = WMAP9.angular_diameter_distance(z).value  # angular diameter distance at redshift z
-    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.15]  # massive galaxies in this z slice
-    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.5]  # all galaxies in this z slice
+    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['ZPHOT'] - z) < 0.2]  # massive galaxies in this z slice
+    cat_all_z_slice = cat_gal[abs(cat_gal['ZPHOT'] - z) < 0.3]  # all galaxies in this z slice
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
 
     massive_counts = len(cat_massive_z_slice)
@@ -58,7 +58,8 @@ for z in np.arange(7, 7.1, 1)/10.:
     SMF_z_bkg = np.zeros(bin_counts)
     for gal in cat_massive_z_slice:
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
-        cat_neighbors = cat_all_z_slice[abs(cat_all_z_slice['RA'] - gal['RA']) < 1.0 / dis / np.pi * 180]
+        cat_neighbors_z_slice = cat_all_z_slice #[abs(cat_all_z_slice['ZPHOT'] - gal['ZPHOT']) < 1.5 * 0.03 * (1 + z)]
+        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 1.0 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 1.0 / dis / np.pi * 180]
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         cat_neighbors = cat_neighbors[coord_neighbors.separation(coord_gal).degree < 1.0 / dis / np.pi * 180]
@@ -67,17 +68,17 @@ for z in np.arange(7, 7.1, 1)/10.:
             massive_counts -= 1
             continue
         mass_neighbors = cat_neighbors['MASS_BEST']
-        if gal['MASS_BEST'] < max(cat_neighbors['MASS_BEST']):  # exclude central gals which has larger mass companion
-            massive_counts -= 1
-            continue
+        # if gal['MASS_BEST'] < max(cat_neighbors['MASS_BEST']):  # exclude central gals which has larger mass companion
+        #     massive_counts -= 1
+        #     continue
 
         mass_high = 12.
         mass_low = 9.5
-        mass_neighbors_bkg = bkg(gal['RA'], np.copy(cat_all_z_slice), coord_massive_gal)
+        mass_neighbors_bkg = bkg(gal['RA'], np.copy(cat_neighbors_z_slice), coord_massive_gal)
         SMF_z += np.histogram(mass_neighbors, bins=bin_counts, range=(mass_low, mass_high))[0]
         SMF_z_bkg += np.histogram(mass_neighbors_bkg, bins=bin_counts, range=(mass_low, mass_high))[0]
         print(gal['ID'])
-    print(len(cat_massive_z_slice))
+    print(massive_counts)
 
     ##################################  PLOT STELLAR MASS FUNCTIONS
     plt.figure(figsize=(7, 6))
@@ -87,6 +88,6 @@ for z in np.arange(7, 7.1, 1)/10.:
     plt.plot(np.arange(mass_low, mass_high, (mass_high - mass_low)/bin_counts), SMF_z - SMF_z_bkg, '-o')
     plt.yscale('log')
     plt.xlabel('mass', fontsize=15)
-    plt.ylabel('number density', fontsize=15)
+    plt.ylabel('number counts per bin', fontsize=15)
     plt.savefig('SMFs/smf_'+str(z)+'_test.png')
     plt.close()
