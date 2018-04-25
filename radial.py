@@ -10,7 +10,7 @@ import numpy as np
 
 cat = Table.read('CUT2_CLAUDS_HSC_VISTA_Ks23.3_PHYSPARAM_TM.fits')
 cat_gal = cat[cat['CLASS'] == 0]
-cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.2]
+cat_massive_gal = cat_gal[cat_gal['MASS_BEST'] > 11.1]
 
 
 def bkg(ra_central, cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
@@ -88,8 +88,12 @@ for z in np.arange(6, 6.1)/10.:
             massive_counts -= 1
             continue
 
+        # if random() > 0.2:   # random additional sampling
+        #     massive_counts -= 1
+        #     continue
+
         print(gal['ID'])
-        # cat_neighbors = cat_neighbors[cat_neighbors['SSFR_BEST'] > -11]
+        # cat_neighbors = cat_neighbors[cat_neighbors[ 'SSFR_BEST'] > -11]
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         print(len(coord_neighbors))
         radius_list = coord_neighbors.separation(coord_gal).degree / 180. * np.pi * dis * 1000  # kpc
@@ -113,22 +117,22 @@ for z in np.arange(6, 6.1)/10.:
     areas = np.array([])
     for i in range(len(bin_edges[:-1])):
         areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
-    np.save(str(mode)+'_cut11.2', (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
-    np.save(str(mode)+'_cut11.2_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
-    np.save('bin_edges', bin_edges)
+    # np.save(str(mode)+'_cut11.3', (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
+    # np.save(str(mode)+'_cut11.3_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
+    # np.save('bin_edges', bin_edges)
     print('massive counts:', len(cat_massive_z_slice), massive_counts)
 
-    # fig = plt.figure(figsize=(9, 6))
-    # plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
-    # plt.errorbar(bin_edges[:-1], (radial_dist-radial_dist_bkg)/areas/float(massive_counts), fmt='.-k', yerr=np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
-    # plt.annotate(str(massive_counts), (1, 1), color='red', fontsize=14, xycoords='axes points')
-    # plt.xscale('log')
-    # plt.yscale('log')
-    # plt.xlabel('Projected Radius [kpc]', fontsize=14)
-    # if mode == 'mass':
-    #     plt.ylabel(r'M/10$^{10}$M$_\odot$ kpc$^{-2}$ UMG$^{-1}$ dr', fontsize=14)
-    #     plt.savefig('radial_mass_test.png')
-    # else:
-    #     plt.ylabel(r'N kpc$^{-2}$ UMG$^{-1}$ dr', fontsize=14)
-    #     plt.savefig('radial_count_test.png')
-    # plt.show()
+    fig = plt.figure(figsize=(9, 6))
+    plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
+    plt.errorbar(bin_edges[:-1], (radial_dist-radial_dist_bkg)/areas/float(massive_counts), fmt='.-k', yerr=np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
+    plt.annotate(str(massive_counts), (1, 1), color='red', fontsize=14, xycoords='axes points')
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel('Projected Radius [kpc]', fontsize=14)
+    if mode == 'mass':
+        plt.ylabel(r'M/10$^{10}$M$_\odot$ kpc$^{-2}$ UMG$^{-1}$ dr', fontsize=14)
+        plt.savefig('radial_mass_test.png')
+    else:
+        plt.ylabel(r'N kpc$^{-2}$ UMG$^{-1}$ dr', fontsize=14)
+        plt.savefig('radial_count_test.png')
+    plt.show()
