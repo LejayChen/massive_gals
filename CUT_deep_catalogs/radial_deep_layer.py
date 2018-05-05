@@ -9,24 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import sys
 
-print('start reading catalogs', end='\r')
-cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
-mode = sys.argv[2]  # 'count' or 'mass'
-cat = Table.read('CUT_'+cat_name+'.fits')
-cat = cat[cat['zKDEPeak'] < 1]
-cat_gal = cat[cat['preds_median'] < 0.89]
-cat_massive_gal = cat_gal[cat_gal['MASS_MED'] > 11.15]
-
-cat_random = Table.read('s16a_' + cat_name + '_random.fits')
-cat_random = cat_random[cat_random['MASK'] == False]
-try:
-    cat_random = cat_random[cat_random['inside_u'] == True]
-except KeyError:
-    cat_random = cat_random[cat_random['inside_uS'] == True]
-cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
-
-print('reading catalogs finished', end='\r')
-
 
 def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
     '''
@@ -51,17 +33,18 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7/dis/np.pi*180]
 
-            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['MASS_MED'] - 9.85) < 0.35]
-            cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST'] > -11]
+            # cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['MASS_MED']>10.2]
+            cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST']>-11]
+
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             radius_neighbors_rand = coord_neighbors_rand.separation(coord_rand).degree/180.*np.pi*dis*1000
             if len(radius_neighbors_rand) != 0:
                 if mode == 'count':
-                    count_gal_rand, edges_rand = np.histogram(radius_neighbors_rand, bins=10**np.linspace(1, 2.75, num=15))
-                    counts_gals_rand += count_gal_rand
+                    count_gal_rand, edges_rand = np.histogram(radius_neighbors_rand, bins=radial_bins)
+                    counts_gals_rand += count_gal_rand/correct_for_masked_area(ra_rand, dec_rand)
                 elif mode == 'mass':
                     mass_neighbors_rand = cat_neighbors_rand['MASS_MED']
-                    binned_data_rand = stats.binned_statistic(radius_neighbors_rand, 10**(mass_neighbors_rand - 10), statistic='sum', bins=10**np.linspace(1, 2.75, num=15))
+                    binned_data_rand = stats.binned_statistic(radius_neighbors_rand, 10**(mass_neighbors_rand - 10), statistic='sum', bins=radial_bins)
                     mass_binned_rand = binned_data_rand[0]
                     counts_gals_rand += mass_binned_rand
             else:
@@ -83,6 +66,44 @@ def add_to_random_points(coord_list):
         cat_random_points.add_row([coord.ra.value, coord.dec.value, gal['NUMBER']])
     return 0
 
+
+def correct_for_masked_area(ra,dec):
+    cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA']-ra) < 0.7 / dis / np.pi * 180]
+    cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+    cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA']*u.deg, cat_nomask['DEC']*u.deg).separation
+                            (SkyCoord(ra*u.deg, dec*u.deg)).degree < 0.7/dis/np.pi*180]
+
+    cat_mask = cat_random[abs(cat_random['RA']-ra) < 0.7 / dis / np.pi * 180]
+    cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+    cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
+                            (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
+
+    count_nomask = np.histogram(cat_nomask, bins=radial_bins)[0]
+    count_mask = np.histogram(cat_mask, bins=radial_bins)[0]
+
+    area_correction = count_mask/count_nomask
+    return area_correction
+
+
+# ################# START #####################
+print('start reading catalogs', end='\r')
+cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
+mode = sys.argv[2]  # 'count' or 'mass'
+cat = Table.read('CUT_'+cat_name+'.fits')
+cat = cat[cat['zKDEPeak'] < 1]
+cat_gal = cat[cat['preds_median'] < 0.89]
+cat_gal = cat_gal[cat_gal['MASS_MED'] > 9.0]
+cat_massive_gal = cat_gal[cat_gal['MASS_MED'] > 11.15]
+cat_random = Table.read('s16a_' + cat_name + '_random.fits')
+cat_random_nomask = np.copy(cat_random)
+cat_random = cat_random[cat_random['MASK'] == False]
+try:
+    cat_random = cat_random[cat_random['inside_u'] == True]
+except KeyError:
+    cat_random = cat_random[cat_random['inside_uS'] == True]
+cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
+
+radial_bins = 10 ** np.linspace(1, 2.75, num=15)
 for z in np.arange(3, 6.1, 3)/10.:
     print('============='+str(z)+'================')
     # set up random points catalog
@@ -134,8 +155,15 @@ for z in np.arange(3, 6.1, 3)/10.:
             massive_counts -= 1
             continue
 
-        cat_neighbors = cat_neighbors[abs(cat_neighbors['MASS_MED'] - 9.85) < 0.35]
-        cat_neighbors = cat_neighbors[cat_neighbors['SSFR_BEST'] > -11]
+        if gal['SSFR_BEST'] > -11:
+            massive_counts -= 1
+            continue
+
+        # ###### more cuts ######
+        # cat_neighbors = cat_neighbors[cat_neighbors['MASS_MED']>10.2]
+        cat_neighbors = cat_neighbors[cat_neighbors['SSFR_BEST']>-11]
+
+
         if len(cat_neighbors) == 0:  # exclude central gals which has no companion
             coord_random_list, radial_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             radial_dist_bkg += radial_bkg
@@ -146,7 +174,7 @@ for z in np.arange(3, 6.1, 3)/10.:
         radius_list = coord_neighbors.separation(coord_gal).degree / 180. * np.pi * dis * 1000  # kpc
 
         # get mean radius value of companions in each bin and stack
-        bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=10 ** np.linspace(1, 2.75, num=15))
+        bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=radial_bins)
         bin_centers = bin_stats[0]
         bin_edges = bin_stats[1]
         bin_centers = np.nan_to_num(bin_centers)
@@ -163,11 +191,11 @@ for z in np.arange(3, 6.1, 3)/10.:
             coord_random_list, sat_counts_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)  # counts
             add_to_random_points(coord_random_list)
-            radial_dist += sat_counts
+            radial_dist += sat_counts/correct_for_masked_area(gal['RA'], gal['DEC'])
             radial_dist_bkg += sat_counts_bkg
         else:
             # mass distribution histogram
-            binned_data = stats.binned_statistic(radius_list, 10**(mass_neighbors-10), statistic='sum', bins=10**np.linspace(1, 2.75, num=15))
+            binned_data = stats.binned_statistic(radius_list, 10**(mass_neighbors-10), statistic='sum', bins=radial_bins)
             mass_binned = binned_data[0]
             sat_masses = np.array(mass_binned, dtype='f8')
             coord_random_list, sat_masses_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
@@ -179,8 +207,10 @@ for z in np.arange(3, 6.1, 3)/10.:
     areas = np.array([])
     for i in range(len(bin_edges[:-1])):
         areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
-    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_sf_'+'_9.5_'+str(z), (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
-    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_sf_'+'_9.5_'+str(z)+'_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
+
+
+    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_cq_'+'ssf_'+str(z), (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
+    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_cq_'+'ssf_'+str(z)+'_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
     np.save('bin_centers', bin_centers_stack/companion_count_stack)
     np.save('bin_edges', bin_edges)
     # cat_random_points.write('random_points_'+cat_name+'_nonoverlapping.fits', overwrite=True)
