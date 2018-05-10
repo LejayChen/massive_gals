@@ -12,18 +12,21 @@ import sys
 
 def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
     '''
-    return a background correction for each central galaxy by looking at blank pointings without massive galaxies.
-    mass_central: mass of the central galaxy,  ra_central: ra value for central galaxy. if ra_central>100, gal in COSMOS, if ra_central<100, gal in XMM-LSS
-    '''
+    :return
+        coord_rand_list:
+           a list of coordinates of random point selected as where random apertures are placed
+        count_gals_rand:
+            an array of companion count per central per bin'''
+
     # __init__
     counts_gals_rand = 0
     n = 0
     num_p = 1  # number of blank pointing's
     coord_rand_list = []
     while n < num_p:  # get several blank pointing's to estimate background
-        id_rand = int(random() * len(cat_random))
-        ra_rand = cat_random[id_rand]['RA']
-        dec_rand = cat_random[id_rand]['DEC']
+        id_rand = int(random() * len(cat_random_copy))
+        ra_rand = cat_random_copy[id_rand]['RA']
+        dec_rand = cat_random_copy[id_rand]['DEC']
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
         if sep2d.degree > 1.4/dis/np.pi*180:  # make sure the random pointing is away from any central galaxy (blank)
             coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
@@ -33,15 +36,15 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7/dis/np.pi*180]
 
-            # cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['MASS_MED']>10.2]
-            cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST']>-11]
+            cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['MASS_MED'] < masscut_high]
+            # cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand['SSFR_BEST']<-11]
 
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             radius_neighbors_rand = coord_neighbors_rand.separation(coord_rand).degree/180.*np.pi*dis*1000
             if len(radius_neighbors_rand) != 0:
                 if mode == 'count':
                     count_gal_rand, edges_rand = np.histogram(radius_neighbors_rand, bins=radial_bins)
-                    counts_gals_rand += count_gal_rand/correct_for_masked_area(ra_rand, dec_rand)
+                    counts_gals_rand += count_gal_rand#/correct_for_masked_area(ra_rand, dec_rand)
                 elif mode == 'mass':
                     mass_neighbors_rand = cat_neighbors_rand['MASS_MED']
                     binned_data_rand = stats.binned_statistic(radius_neighbors_rand, 10**(mass_neighbors_rand - 10), statistic='sum', bins=radial_bins)
@@ -55,6 +58,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
 
 
 def cut_random_cat(cat_rand, coord_list):
+    # cut random point catalog to avoid overlapping
     for coord in coord_list:
         coord_rand_list = SkyCoord(cat_rand['RA'] * u.deg, cat_rand['DEC'] * u.deg)
         cat_rand = cat_rand[coord_rand_list.separation(coord).degree > 1.2 / dis / np.pi * 180]
@@ -62,12 +66,14 @@ def cut_random_cat(cat_rand, coord_list):
 
 
 def add_to_random_points(coord_list):
+    # store coord of random points just for record
     for coord in coord_list:
         cat_random_points.add_row([coord.ra.value, coord.dec.value, gal['NUMBER']])
     return 0
 
 
 def correct_for_masked_area(ra,dec):
+    # correct area for normalization if it is partially in masked region
     cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA']-ra) < 0.7 / dis / np.pi * 180]
     cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
     cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA']*u.deg, cat_nomask['DEC']*u.deg).separation
@@ -86,13 +92,17 @@ def correct_for_masked_area(ra,dec):
 
 
 # ################# START #####################
+radial_bins = 10 ** np.linspace(1, 2.75, num=15)
+masscut_low = 10.2
+masscut_high = 12.5
+
 print('start reading catalogs', end='\r')
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 mode = sys.argv[2]  # 'count' or 'mass'
 cat = Table.read('CUT_'+cat_name+'.fits')
 cat = cat[cat['zKDEPeak'] < 1]
 cat_gal = cat[cat['preds_median'] < 0.89]
-cat_gal = cat_gal[cat_gal['MASS_MED'] > 9.0]
+cat_gal = cat_gal[cat_gal['MASS_MED'] > masscut_low]
 cat_massive_gal = cat_gal[cat_gal['MASS_MED'] > 11.15]
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
 cat_random_nomask = np.copy(cat_random)
@@ -103,11 +113,13 @@ except KeyError:
     cat_random = cat_random[cat_random['inside_uS'] == True]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
-radial_bins = 10 ** np.linspace(1, 2.75, num=15)
 for z in np.arange(3, 6.1, 3)/10.:
     print('============='+str(z)+'================')
-    # set up random points catalog
+
+    # reset random points catalog at each redshift
     cat_random_copy = np.copy(cat_random)
+    total_count = []
+    total_count_bkg = []
 
     # slice random points catalog
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['zKDEPeak'] - z) < 0.09]
@@ -133,7 +145,7 @@ for z in np.arange(3, 6.1, 3)/10.:
         cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice['zKDEPeak'] - gal['zKDEPeak']) < 1.5 * 0.03 * (1 + z)]
         cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 0.7 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 0.7 / dis / np.pi * 180]
-        if len(cat_neighbors) == 0:  # exclude central gals which has no companion
+        if len(cat_neighbors) == 0:  # central gals which has no companion
             coord_random_list, radial_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             radial_dist_bkg += radial_bkg
             cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)
@@ -143,7 +155,7 @@ for z in np.arange(3, 6.1, 3)/10.:
             ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.7 / dis / np.pi * 180)
             cat_neighbors = cat_neighbors[ind[0]]
             cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]
-            if len(cat_neighbors) == 0:  # exclude central gals which has no companion
+            if len(cat_neighbors) == 0:  # central gals which has no companion
                 coord_random_list, radial_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
                 radial_dist_bkg += radial_bkg
                 cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)
@@ -155,16 +167,14 @@ for z in np.arange(3, 6.1, 3)/10.:
             massive_counts -= 1
             continue
 
-        if gal['SSFR_BEST'] > -11:
-            massive_counts -= 1
-            continue
-
         # ###### more cuts ######
-        # cat_neighbors = cat_neighbors[cat_neighbors['MASS_MED']>10.2]
-        cat_neighbors = cat_neighbors[cat_neighbors['SSFR_BEST']>-11]
+        # if gal['SSFR_BEST'] < -11:
+        #     massive_counts -= 1
+        #     continue
 
-
-        if len(cat_neighbors) == 0:  # exclude central gals which has no companion
+        cat_neighbors = cat_neighbors[cat_neighbors['MASS_MED'] < masscut_high]
+        # cat_neighbors = cat_neighbors[cat_neighbors['SSFR_BEST']<-11]
+        if len(cat_neighbors) == 0:  # central gals which has no companion
             coord_random_list, radial_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             radial_dist_bkg += radial_bkg
             cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)
@@ -186,16 +196,22 @@ for z in np.arange(3, 6.1, 3)/10.:
 
         if mode == 'count':
             # radial distribution histogram
-            count_binned = np.histogram(radius_list, bins=10**np.linspace(1, 2.75, num=15))[0]
+            count_binned = np.histogram(radius_list, bins=radial_bins)[0]
             sat_counts = np.array(count_binned, dtype='f8')
             coord_random_list, sat_counts_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)  # counts
             add_to_random_points(coord_random_list)
-            radial_dist += sat_counts/correct_for_masked_area(gal['RA'], gal['DEC'])
+            radial_dist += sat_counts#/correct_for_masked_area(gal['RA'], gal['DEC'])
             radial_dist_bkg += sat_counts_bkg
+
+            total_count.append(sum(sat_counts))
+            total_count_bkg.append(sum(sat_counts_bkg))
+
         else:
             # mass distribution histogram
             binned_data = stats.binned_statistic(radius_list, 10**(mass_neighbors-10), statistic='sum', bins=radial_bins)
+            # mass_error_sys = np.sqrt((sum(10**cat_neighbors['dmz_q'])**2))
+            # mass_error_number = np.sqrt(len(radius_list)*10**np.average(cat_neighbors['MASS_MED']))
             mass_binned = binned_data[0]
             sat_masses = np.array(mass_binned, dtype='f8')
             coord_random_list, sat_masses_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
@@ -208,11 +224,23 @@ for z in np.arange(3, 6.1, 3)/10.:
     for i in range(len(bin_edges[:-1])):
         areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
+    # split central sfq and companion sfq
+    # np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_csf_'+'sq_'+str(z), (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
+    # np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_csf_'+'sq_'+str(z)+'_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
+    # np.save('bin_centers', bin_centers_stack/companion_count_stack)
+    # np.save('bin_edges', bin_edges)
 
-    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_cq_'+'ssf_'+str(z), (radial_dist-radial_dist_bkg)/areas/float(massive_counts))
-    np.save('split_sfq_mass_data/'+str(mode)+cat_name+'_cq_'+'ssf_'+str(z)+'_err', np.sqrt(radial_dist+radial_dist_bkg)/areas/float(massive_counts))
-    np.save('bin_centers', bin_centers_stack/companion_count_stack)
-    np.save('bin_edges', bin_edges)
+    # split companion mass bin and companion sfq
+    np.save('uddd_calibration/' + str(mode) + cat_name + '_' + str(masscut_low)+'_' + str(z), (radial_dist - radial_dist_bkg) / areas / float(massive_counts))
+    np.save('uddd_calibration/' + str(mode) + cat_name + '_' + str(masscut_low)+'_' + str(z) + '_err', np.sqrt(radial_dist + radial_dist_bkg) / areas / float(massive_counts))
+    np.save('uddd_calibration/' + str(mode) + cat_name + '_' + str(masscut_low)+'_' + str(z) + '_sample_err', np.sqrt(radial_dist) / areas / float(massive_counts))
+    np.save('uddd_calibration/' + str(mode) + cat_name + '_' + str(masscut_low)+'_' + str(z) + '_bkg_err', np.sqrt(radial_dist_bkg) / areas / float(massive_counts))
+
+    # np.save('split_sfq_mass_data/' + cat_name + 'total_count_aperture_sample' + '_allabove_' + '9.0_' + str(z), total_count)
+    # np.save('split_sfq_mass_data/' + cat_name + 'total_count_aperture_bkg' + '_allabove_' + '9.0_' + str(z), total_count_bkg)
+    np.save('uddd_calibration/' + 'bin_centers', bin_centers_stack / companion_count_stack)
+    np.save('uddd_calibration/' + 'bin_edges', bin_edges)
+
     # cat_random_points.write('random_points_'+cat_name+'_nonoverlapping.fits', overwrite=True)
     print('massive counts:', len(cat_massive_z_slice), massive_counts)
 
