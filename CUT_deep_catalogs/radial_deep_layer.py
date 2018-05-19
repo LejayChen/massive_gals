@@ -7,6 +7,7 @@ from astropy.cosmology import WMAP9
 from astropy.table import Table
 from scipy import stats
 from sklearn.neighbors import KDTree
+from plot_bkg import *
 import matplotlib.pyplot as plt
 
 sys.path.append('../')
@@ -93,7 +94,7 @@ def correct_for_masked_area(ra, dec):
     cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                             (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-    if len(cat_mask) == 0:
+    if len(cat_mask) == 0:  # point outside random point catalog region
         return np.ones(bin_numbers)
     else:
         coord = SkyCoord(ra * u.deg, dec * u.deg)
@@ -104,6 +105,11 @@ def correct_for_masked_area(ra, dec):
         count_nomask = np.histogram(radius_list_nomask, bins=radial_bins)[0]
         count_mask = np.histogram(radius_list_mask, bins=radial_bins)[0]
 
+        count_nomask = np.array(count_nomask).astype(float)
+        count_mask = np.array(count_mask).astype(float)
+        if len(count_mask[count_mask!=0])<3 and len(count_nomask[count_nomask!=0])>2:  # point on the edge of random point catalog region
+            return np.ones(bin_numbers)
+
         count_mask[count_mask==0.] = 1
         count_nomask[count_nomask==0.] = 1
         return count_mask/count_nomask
@@ -113,11 +119,11 @@ def correct_for_masked_area(ra, dec):
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 mode = sys.argv[2]  # 'count' or 'mass'
 bin_numbers = 14
-radial_bins = 10 ** np.linspace(1, 2.75, num=bin_numbers+1)
-masscut_low = 10.2
+radial_bins = 10 ** np.linspace(1, 2.845, num=bin_numbers+1)
+masscut_low = 9.5
 masscut_high = np.inf
 csfq = 'all'  # csf, cq, all
-ssfq = 'ssf'  # ssf, sq, all
+ssfq = 'sq'  # ssf, sq, all
 path = 'calibration_deep/mask_corrected/'
 print(mode, csfq, ssfq, masscut_low, masscut_high)
 print('start reading catalogs', end='\r')
@@ -152,8 +158,6 @@ for z in np.arange(6, 6.1, 1)/10.:
     massive_count = 0
     bin_centers_stack = 0
     companion_count_stack = 0
-    total_count = []
-    total_count_bkg = []
     for gal in cat_massive_z_slice:
         massive_count += 1
         print('Progress:'+str(massive_count)+'/'+str(len(cat_massive_z_slice)), end='\r')
@@ -229,8 +233,6 @@ for z in np.arange(6, 6.1, 1)/10.:
             coord_random_list, sat_counts_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, mode=mode)
             radial_dist += sat_counts / correct_for_masked_area(gal['RA'], gal['DEC'])
             radial_dist_bkg += sat_counts_bkg
-            total_count.append(sum(sat_counts))
-            total_count_bkg.append(sum(sat_counts_bkg))
         else:                                                           # mass distribution histogram
             binned_data = stats.binned_statistic(radius_list, 10**(mass_neighbors-10), statistic='sum', bins=radial_bins)
             mass_binned = binned_data[0]
@@ -255,14 +257,11 @@ for z in np.arange(6, 6.1, 1)/10.:
     if mode == 'mass':
         np.save(filename+'_err', cal_error2(radial_dist, radial_dist_bkg, massive_counts)*(radial_dist/radial_count_dist)/areas)
     np.save(filename + '_bkg_err', np.sqrt(radial_dist_bkg) / areas / float(massive_counts))
-    np.save(path + 'bin_edges_new', bin_edges)
+    np.save(path + 'bin_edges', bin_edges)
     np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
-    # np.save('split_sfq_mass_data/' + cat_name + 'total_count_aperture_sample' + '_allabove_' + '9.0_' + str(z), total_count)
-    # np.save('split_sfq_mass_data/' + cat_name + 'total_count_aperture_bkg' + '_allabove_' + '9.0_' + str(z), total_count_bkg)
-
-    cat_random_points.write('random_points_'+cat_name+'_nonoverlapping.fits', overwrite=True)
+    cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
     print('massive counts:', len(cat_massive_z_slice), massive_counts)
-
+    plot_bkg(cat_name,z)
 
     # fig = plt.figure(figsize=(9, 6))
     # plt.rc('font', family='serif'), plt.rc('xtick', labelsize=15), plt.rc('ytick', labelsize=15)
