@@ -1,9 +1,13 @@
 from cutout import cutoutimg
 from astropy.table import Table
+from astropy.io import fits
+from astropy import wcs
+from random import random
+import numpy as np
 import os
 
 ims = open('ims.txt').readlines()
-
+gal_ims = open('gal_ims.txt','w')
 for im in ims:
     im = im.rstrip()
     mask = im.replace('chi2', 'chi2Mask')
@@ -16,20 +20,29 @@ for im in ims:
     os.system('vcp vos:' + imLoc + ' ./ --verbose ')
     os.system('vcp vos:' + maskLoc + ' ./ --verbose')
 
+    cat = Table.read('SXDS_uddd_11.15_0.6.positions.fits')
+    cat = cat[cat['tract'] == tract]
+    cat = cat[cat['patch'] == patch]
+    patch = im.split('_')[2].replace('.fits', '')
+    print(len(cat))
+
     # cut sources
-    cat = Table.read()
-
-    cat = cat[cat['TRACT'] == tract]
-    cat = cat[cat['PATCH'] == patch]
-
     for gal in cat:
-        cutoutimg()
-        cutoutimg()
+        print(gal['ID'])
+        image = fits.open(im)
+        w = wcs.WCS(image[0].header)
 
-        ra_min, dec_min =
-        ra_max, dec_max =
-        ra_rand =
-        dec_rand =
+        # cut for source and its mask
+        x_gal, y_gal = w.wcs_world2pix(gal['ra'],gal['dec'], 0)
+        cutoutimg(im, x_gal, y_gal, xw=225, yw=225, units='pixels', outfile='cutout_'+gal['ID']+'.fits')
+        cutoutimg(mask, x_gal, y_gal, xw=225, yw=225, units='pixels', outfile='cutout_'+gal['ID']+'_mask.fits')
 
-        cutoutimg()
-        cutoutimg()
+        ra_max, dec_min = w.wcs_pix2world(0, 0, 0)
+        ra_min, dec_max = w.wcs_pix2world(image[0].shape[0], image[0].shape[1], 0)
+        ra_rand = ra_min + random() * (ra_max-ra_min)
+        dec_rand = dec_min + random() * (dec_max-dec_min)
+        x_rand, y_rand = w.wcs_pix2world(ra_rand, dec_rand, 0)
+
+        # cut for random and its mask
+        cutoutimg(im, x_rand, y_rand, xw=225, yw=225, units='pixels', outfile='cutout_'+gal['ID']+'_rand.fits')
+        cutoutimg(mask, x_rand, y_rand, xw=225, yw=225, units='pixels', outfile='cutout_'+gal['ID']+'_rand_mask.fits')
