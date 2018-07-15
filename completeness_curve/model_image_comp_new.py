@@ -7,6 +7,7 @@ from astropy import table
 import argparse
 from astropy import wcs
 from mpi4py import MPI
+from rename import *
 comm=MPI.COMM_WORLD
 import tqdm
 
@@ -33,23 +34,23 @@ def addMaskVal(mask,catalog,maskColName,xCol='X_IMAGE',yCol='Y_IMAGE'):
     cat = table.Table(fits.getdata(catalog))
     xRound = np.round(cat[xCol], 0).astype(int)
     yRound = np.round(cat[yCol], 0).astype(int)
-    maskVals = m[yRound-1,xRound-1].astype(bool)
+    maskVals = m[yRound-1, xRound-1].astype(bool)
     cat[maskColName] = maskVals.astype(bool)
     cat.write(catalog, format='fits', overwrite=True)
 
 
-def addImages(im1,im2,scale1,scale2,imOut):
-    i1,i2 = fits.getdata(im1),fits.getdata(im2)
+def addImages(im1, im2, scale1, scale2, imOut):
+    i1, i2 = fits.getdata(im1), fits.getdata(im2)
     i3 = scale1*i1 + scale2*i2
-    fits.writeto(imOut,i3,header=fits.getheader(im1),overwrite=True)
-    return(imOut)
+    fits.writeto(imOut, i3, header=fits.getheader(im1), overwrite=True)
+    return imOut
 
 
-def renameColumns(cat,suffix):
-    t = table.Table(fits.getdata(cat,1))
+def renameColumns(cat, suffix):
+    t = table.Table(fits.getdata(cat, 1))
     for col in t.colnames:
         t.rename_column(col, col+suffix)
-    t.write(cat,format='fits',overwrite=True)
+    t.write(cat, format='fits', overwrite=True)
 
 #------------------------------------------------------------------------------
 #||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||
@@ -88,7 +89,7 @@ for im in myIms:
         im = im.rstrip()
         rand_im = im.replace('.fits', '_rand.fits')
         mask = im.replace('.fits', '_mask.fits')
-        rand_mask = rand_im.replace('.fits', 'chi2Mask')
+        rand_mask = rand_im.replace('.fits', '_mask.fits')
 
         print(im)
         print(rand_im)
@@ -119,7 +120,7 @@ for im in myIms:
         pixCoords = np.c_[t['X_IMAGE'], t['Y_IMAGE']]
         new_coord = w.wcs_pix2world(pixCoords, 1)  # random field objects' world coords on source frame
         t['X_WORLD'] = new_coord[:, 0]
-        t['y_WORLD'] = new_coord[:, 1]
+        t['Y_WORLD'] = new_coord[:, 1]
         t.write(rand_im.replace('.fits', '_cat.fits'), format='fits', overwrite=True)
 
         # join the tables to make the base
@@ -136,16 +137,18 @@ for im in myIms:
         imSum = im.replace('.fits', '_chi2_sum.fits')
         addImages(im, rand_im.replace('.fits', '_models.fits'), 1.0, 1.0, imSum)
         sextract(imSum, imSum.replace('.fits', '_cat.fits'))
-        renameColumns(imSum.replace('.fits', '_cat.fits'), '_')
+        renameColumns(imSum.replace('.fits', '_cat.fits'), '_1.0')
 
         # merge new catalog with original
         newCat = imSum.replace('.fits', '_cat.fits')
         allCat = im.replace('.fits', '_all_cat.fits')
         cmd = 'java -jar /home/lejay/.local/bin/stilts.jar tmatch2 in1='+allCat + \
             ' in2='+newCat+' find=best join=all1 matcher=sky params=1 values1="X_WORLD Y_WORLD"' + \
-            ' values2="X_WORLD'+'_'+' Y_WORLD'+'_'+'" out='+allCat
+            ' values2="X_WORLD_1.0'+' Y_WORLD_1.0'+'" out='+allCat
+        print(cmd)
         os.system(cmd)
-        # os.system('rm ./*'+tract+'_'+patch+'*')
+        os.system('mv '+allCat+' ./'+allCat.replace('cutout', ''))
+        os.system('rm cutout_*fits')
     else:
         f = open('./fails.txt', 'a')
         print(im, file=f)

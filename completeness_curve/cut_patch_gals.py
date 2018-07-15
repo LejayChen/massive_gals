@@ -7,7 +7,7 @@ import numpy as np
 import os
 
 ims = open('ims.txt').readlines()
-gal_ims = open('gal_ims.txt','w')
+gal_ims = open('gal_ims.txt', 'w')
 for im in ims:
     im = im.rstrip()
     mask = im.replace('chi2', 'chi2Mask')
@@ -15,16 +15,16 @@ for im in ims:
     patch = im.split('_')[2].replace('.fits', '')
     patch = patch[0]+','+patch[1]
 
-    # maskLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Masks/" + mask
-    # imLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Ims/" + im
-    # os.system('vcp vos:' + imLoc + ' ./ --verbose ')
-    # os.system('vcp vos:' + maskLoc + ' ./ --verbose')
+    maskLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Masks/" + mask
+    imLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Ims/" + im
+    os.system('vcp vos:' + imLoc + ' ./ --verbose ')
+    os.system('vcp vos:' + maskLoc + ' ./ --verbose')
 
     cat = Table.read('SXDS_uddd_11.15_0.6.positions.fits')
     cat = cat[cat['tract'] == tract]
     cat = cat[cat['patch'] == patch]
     patch = im.split('_')[2].replace('.fits', '')
-    print(len(cat))
+    print('Number of massive gal in this patch:', len(cat))
 
     # cut sources
     for gal in cat:
