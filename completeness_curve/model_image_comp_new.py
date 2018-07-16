@@ -147,8 +147,8 @@ for im in myIms:
             ' values2="X_WORLD_1.0'+' Y_WORLD_1.0'+'" out='+allCat
         print(cmd)
         os.system(cmd)
-        os.system('mv '+allCat+' ./'+allCat.replace('cutout', ''))
-        os.system('rm cutout_*fits')
+        os.system('mv '+allCat+' ./'+allCat.replace('cutout_', ''))
+        os.system('rm '+im.replace('.fits', '')+'*')
     else:
         f = open('./fails.txt', 'a')
         print(im, file=f)

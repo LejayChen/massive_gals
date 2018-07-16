@@ -19,17 +19,17 @@ def rotateChi2(image):
 
     fits.writeto(image.replace('.fits','_rot.fits'),np.rot90(im,k=k),\
                      header=fits.getheader(image),overwrite=True)
-    return(k,im.shape)
+    return k, im.shape
 
 
 def rotXY(x,y,shape,k):
     for i in range(k):
         xShift = x-shape[1]/2
         yShift = y-shape[0]/2
-        xRot,yRot = -1*yShift,xShift
-        x,y = xRot+shape[0]/2, yRot+shape[1]/2
-        shape = [shape[1],shape[0]]
-    return(x,y)
+        xRot, yRot = -1*yShift, xShift
+        x, y = xRot+shape[0]/2, yRot+shape[1]/2
+        shape = [shape[1], shape[0]]
+    return x, y
 
 
 def sextract(image,catalogName,flux_radii=[0.25,0.5,0.75],checkIm=None,checkImType=None):
@@ -42,7 +42,7 @@ def sextract(image,catalogName,flux_radii=[0.25,0.5,0.75],checkIm=None,checkImTy
     os.system(cmd)
 
     # Expand FLUX_RADIUS
-    t = table.Table(fits.getdata(catalogName,1))
+    t = table.Table(fits.getdata(catalogName, 1))
     for i, rad in enumerate(flux_radii):
         t['FLUX_RADIUS_'+str(rad)] = np.array(t['FLUX_RADIUS'])[:, i]
     t.remove_column('FLUX_RADIUS')
@@ -77,15 +77,15 @@ def renameColumns(cat,suffix):
 #------------------------------------------------------------------------------
 # Set up parser
 parser = argparse.ArgumentParser()
-parser.add_argument("-b", "--bands",nargs='+', help="bands to include in chi2 masks",\
-                    default=['MegaCam-uS','HSC-G','HSC-R','HSC-I','HSC-Z','HSC-Y'])
-parser.add_argument("-p","--dataPath",help="full path to data release (where deepCoadds is a subfolder)",\
+parser.add_argument("-b", "--bands", nargs='+', help="bands to include in chi2 masks",
+                    default=['MegaCam-uS', 'HSC-G','HSC-R','HSC-I','HSC-Z','HSC-Y'])
+parser.add_argument("-p","--dataPath", help="full path to data release (where deepCoadds is a subfolder)",
                     default = './')
 parser.add_argument("--tract",help='HSC tract id', default = '9813')
-parser.add_argument("--overwrite",help='if True, will overwrite existing images',\
+parser.add_argument("--overwrite", help='if True, will overwrite existing images',
                     default = False)
-parser.add_argument("--prefix",help="prefix to be added to Chi2 images",default='uSgrizyChi2')
-parser.add_argument("--dotsex",help="SExtractor .param file",default='default.sex')
+parser.add_argument("--prefix", help="prefix to be added to Chi2 images", default='uSgrizyChi2')
+parser.add_argument("--dotsex", help="SExtractor .param file", default='default.sex')
 
 args = parser.parse_args()
 #------------------------------------------------------------------------------
@@ -107,9 +107,9 @@ if rank==0:
 for im in myIms:
     if rank>=0:
         im = im.rstrip()
-        mask = im.replace('chi2','chi2Mask')
+        mask = im.replace('chi2', 'chi2Mask')
         tract = im.split('_')[1]
-        patch = im.split('_')[2].replace('.fits','')
+        patch = im.split('_')[2].replace('.fits', '')
 
         maskLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Masks/"+mask
         imLoc = "clauds/anneya/s16a_v2/s16a_udddv2.2/SExChi2_chi2Ims/"+im
@@ -120,21 +120,20 @@ for im in myIms:
         mask = './'+mask
 
         # rotate
-        k,shape = rotateChi2(im)
+        k, shape = rotateChi2(im)
         rotateChi2(mask)
 
         # SExtract orig
         # sextract(image,catalogName,flux_radii=[0.25,0.5,0.75],checkIm=None,checkImType=None)
-        sextract(im,im.replace('.fits', '_cat.fits'),flux_radii=[0.25,0.5,0.75],\
+        sextract(im, im.replace('.fits', '_cat.fits'), flux_radii=[0.25, 0.5, 0.75],
                  checkIm=im.replace('.fits', '_models.fits'), checkImType='models')
 
-        # cmd = 'vcp '+im.replace('.fits', '_models.fits') + ' vos:clauds/anneya/s16a_v2/s16a_udddv2.2/chi2Models/.'
-        # os.system(cmd)
         rotateChi2(im.replace('.fits', '_models.fits'))
         sextract(im.replace('.fits', '_rot.fits'), im.replace('.fits','_rot_cat.fits'))
 
         # add column flagging whether objects came from original or rotated image
         t = table.Table(fits.getdata(im.replace('.fits', '_cat.fits'), 1))
+        print(t.info())
         t['ORIGINAL'] = np.ones(len(t)).astype(bool)
         t['RA_deRot'] = t['X_WORLD']
         t['DEC_deRot'] = t['Y_WORLD']
@@ -145,45 +144,46 @@ for im in myIms:
         t['ORIGINAL'] = np.zeros(len(t)).astype(bool)
         x = t['X_IMAGE']
         y = t['Y_IMAGE']
-        xRot, yRot = rotXY(x,y,shape,k)
+        xRot, yRot = rotXY(x, y, shape, k)
         hdulist = fits.open(im)
         w = wcs.WCS(hdulist[0].header)
-        pixCoords = np.c_[xRot,yRot]
-        derot=w.wcs_pix2world(pixCoords,1)
-        t['RA_deRot'] = derot[:,0]
-        t['DEC_deRot'] = derot[:,1]
-        t.write(im.replace('.fits','_rot_cat.fits'),format='fits',overwrite=True)
+        pixCoords = np.c_[xRot, yRot]
+        derot=w.wcs_pix2world(pixCoords, 1)
+        t['RA_deRot'] = derot[:, 0]
+        t['DEC_deRot'] = derot[:, 1]
+        t.write(im.replace('.fits', '_rot_cat.fits'), format='fits', overwrite=True)
 
         # join the tables to make the base
         to = table.Table(fits.getdata(im.replace('.fits', '_cat.fits')))
         tr = table.Table(fits.getdata(im.replace('.fits', '_rot_cat.fits')))
         tAll = table.join(to, tr, join_type='outer')
-        tAll.write(im.replace('.fits','_all_cat.fits'),format='fits',overwrite=True)
+        tAll.write(im.replace('.fits', '_all_cat.fits'), format='fits', overwrite=True)
 
         # add mask values from orig and rotated masks
-        addMaskVal(mask,im.replace('.fits', '_all_cat.fits'), 'maskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
+        addMaskVal(mask, im.replace('.fits', '_all_cat.fits'), 'maskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
         addMaskVal(mask.replace('.fits', '_rot.fits'), im.replace('.fits', '_all_cat.fits'), 'rotMaskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
 
         # add scaled & rotated chi2 images to original, run SExtractor on summed images
         fScales = np.arange(0.1, 1.1, 0.1)
         for fScale in fScales:
             print(fScale)
-            newIm = im.replace('.fits','_'+str(fScale)+'chi2_rot.fits')
-            imSum = addImages(im,im.replace('.fits','_models_rot.fits'),1.0,fScale,newIm)
-            sextract(newIm,newIm.replace('.fits','_cat.fits'))
-            renameColumns(newIm.replace('.fits','_cat.fits'),'_'+str(fScale))
+            newIm = im.replace('.fits', '_'+str(fScale)+'chi2_rot.fits')
+            imSum = addImages(im, im.replace('.fits', '_models_rot.fits'), 1.0, fScale, newIm)
+            sextract(newIm, newIm.replace('.fits', '_cat.fits'))
+            renameColumns(newIm.replace('.fits', '_cat.fits'), '_'+str(fScale))
+
             # merge new catalog with original
-            newCat = newIm.replace('.fits','_cat.fits')
-            allCat = im.replace('.fits','_all_cat.fits')
+            newCat = newIm.replace('.fits', '_cat.fits')
+            allCat = im.replace('.fits', '_all_cat.fits')
+
             cmd = 'java -jar /home/lejay/.local/bin/stilts.jar tmatch2 in1='+allCat + \
             ' in2='+newCat+' find=best join=all1 matcher=sky params=1 values1="X_WORLD Y_WORLD"' + \
             ' values2="X_WORLD'+'_'+str(fScale)+' Y_WORLD'+'_'+str(fScale)+'" out='+allCat
             os.system(cmd)
-        # os.system('vcp '+im.replace('.fits','_all_cat.fits')+\
-        #           ' vos:clauds/anneya/s16a_v2/s16a_udddv2.2/chi2ModelCompleteness/. --overwrite')
-        os.system('rm ./*'+tract+'_'+patch+'*')
+
+        # os.system('rm ./*'+tract+'_'+patch+'*')
     else:
-        f = open('./fails.txt','a')
+        f = open('./fails.txt', 'a')
         print(im, file=f)
         print('Failed!')
         f.close()
