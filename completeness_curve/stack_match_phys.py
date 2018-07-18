@@ -6,11 +6,13 @@ im0 = ims[0].rstrip()
 cat_stack = Table.read(im0.replace('.fits', '_all_cat.fits').replace('cutout_',''))
 cat_stack_name = 'cat_stack.fits'
 
-for im in ims:
+for im in ims[1:]:
     im = im.rstrip()
     cat = Table.read(im.replace('.fits', '_all_cat.fits').replace('cutout_', ''))
     cat_stack = vstack([cat_stack, cat])
-    cat_stack.write(cat_stack_name, overwrite=True)
+
+cat_stack.write(cat_stack_name, overwrite=True)
+os.system('rm *_all_cat.fits')
 
 # match with phys catalog
 cat_phys = '../CUT_deep_catalogs/CUT2_SXDS_uddd.fits'

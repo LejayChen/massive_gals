@@ -74,7 +74,6 @@ args = parser.parse_args()
 # MPI
 rank = comm.Get_rank()
 nProcs = comm.Get_size()
-# ims = np.genfromtxt('ims.txt',dtype=None)
 ims = open('gal_ims.txt').readlines()
 nEach = len(ims)//nProcs
 if rank == nProcs-1:
@@ -82,73 +81,82 @@ if rank == nProcs-1:
 else:
     myIms = ims[rank*nEach:rank*nEach+nEach]
 
-if rank==0:
+if rank == 0:
     myIms = tqdm.tqdm(myIms)
 for im in myIms:
-    if rank>=0:
+    if rank >= 0:
         im = im.rstrip()
-        rand_im = im.replace('.fits', '_rand.fits')
         mask = im.replace('.fits', '_mask.fits')
-        rand_mask = rand_im.replace('.fits', '_mask.fits')
-
-        print(im)
-        print(rand_im)
 
         # SExtract orig
         # sextract(image,catalogName,flux_radii=[0.25,0.5,0.75],checkIm=None,checkImType=None)
         sextract(im, im.replace('.fits', '_cat.fits'), flux_radii=[0.25, 0.5, 0.75],
                  checkIm=im.replace('.fits', '_models.fits'), checkImType='models')
 
-        # SExtract random
-        sextract(rand_im, rand_im.replace('.fits', '_cat.fits'), flux_radii=[0.25, 0.5, 0.75],
+        for i in range(4):
+            rand_im = im.replace('.fits', '_'+str(i)+'_rand.fits')
+            rand_mask = rand_im.replace('.fits', '_mask.fits')
+            print(rand_im)
+            # SExtract random
+            sextract(rand_im, rand_im.replace('.fits', '_cat.fits'), flux_radii=[0.25, 0.5, 0.75],
                  checkIm=rand_im.replace('.fits', '_models.fits'), checkImType='models')
 
-        # add column flagging whether objects came from original or random image
-        t = table.Table(fits.getdata(im.replace('.fits', '_cat.fits'), 1))  # read
-        t['ORIGINAL'] = np.ones(len(t)).astype(bool)
-        t['RA_deShift'] = t['X_WORLD']
-        t['DEC_deShift'] = t['Y_WORLD']
-        t.write(im.replace('.fits', '_cat.fits'), format='fits', overwrite=True)  # write
+            # add column flagging whether objects came from original or random image
+            t = table.Table(fits.getdata(im.replace('.fits', '_cat.fits'), 1))  # read
+            t['ORIGINAL'] = np.ones(len(t)).astype(bool)
+            t['RA_deShift'] = t['X_WORLD']
+            t['DEC_deShift'] = t['Y_WORLD']
+            t.write(im.replace('.fits', '_cat.fits'), format='fits', overwrite=True)  # write
 
-        # add ra/dec of original object for each shifted object (so we can recover redshifts/physical properties)
-        t = table.Table(fits.getdata(rand_im.replace('.fits', '_cat.fits'), 1))
-        t['ORIGINAL'] = np.zeros(len(t)).astype(bool)
-        t['RA_deShift'] = t['X_WORLD']
-        t['DEC_deShift'] = t['Y_WORLD']
-        hdulist = fits.open(im)
-        w = wcs.WCS(hdulist[0].header)
-        pixCoords = np.c_[t['X_IMAGE'], t['Y_IMAGE']]
-        new_coord = w.wcs_pix2world(pixCoords, 1)  # random field objects' world coords on source frame
-        t['X_WORLD'] = new_coord[:, 0]
-        t['Y_WORLD'] = new_coord[:, 1]
-        t.write(rand_im.replace('.fits', '_cat.fits'), format='fits', overwrite=True)
+            # add ra/dec of original object for each shifted object (so we can recover redshifts/physical properties)
+            t = table.Table(fits.getdata(rand_im.replace('.fits', '_cat.fits'), 1))
+            t['ORIGINAL'] = np.zeros(len(t)).astype(bool)
+            t['RA_deShift'] = t['X_WORLD']
+            t['DEC_deShift'] = t['Y_WORLD']
+            hdulist = fits.open(im)
+            w = wcs.WCS(hdulist[0].header)
+            pixCoords = np.c_[t['X_IMAGE'], t['Y_IMAGE']]
+            new_coord = w.wcs_pix2world(pixCoords, 1)  # random field objects' world coords on source frame
+            t['X_WORLD'] = new_coord[:, 0]
+            t['Y_WORLD'] = new_coord[:, 1]
+            t.write(rand_im.replace('.fits', '_cat.fits'), format='fits', overwrite=True)
 
-        # join the tables to make the base
-        to = table.Table(fits.getdata(im.replace('.fits', '_cat.fits')))
-        tr = table.Table(fits.getdata(rand_im.replace('.fits', '_cat.fits')))
-        tAll = table.join(to, tr, join_type='outer')
-        tAll.write(im.replace('.fits', '_all_cat.fits'), format='fits', overwrite=True)
+            # join the tables to make the base
+            to = table.Table(fits.getdata(im.replace('.fits', '_cat.fits')))
+            tr = table.Table(fits.getdata(rand_im.replace('.fits', '_cat.fits')))
+            tAll = table.join(to, tr, join_type='outer')
+            tAll.write(im.replace('.fits', '_'+str(i)+'_all_cat.fits'), format='fits', overwrite=True)
 
-        # add mask values from orig and rotated masks
-        addMaskVal(mask, im.replace('.fits', '_all_cat.fits'), 'maskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
-        addMaskVal(rand_mask, im.replace('.fits', '_all_cat.fits'), 'shiftMaskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
+            # add mask values from orig and rotated masks
+            addMaskVal(mask, im.replace('.fits', '_'+str(i)+'_all_cat.fits'), 'maskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
+            addMaskVal(rand_mask, im.replace('.fits', '_'+str(i)+'_all_cat.fits'), 'shiftMaskVal', xCol='X_IMAGE', yCol='Y_IMAGE')
 
-        # add scaled & rotated chi2 images to original, run SExtractor on summed images
-        imSum = im.replace('.fits', '_chi2_sum.fits')
-        addImages(im, rand_im.replace('.fits', '_models.fits'), 1.0, 1.0, imSum)
-        sextract(imSum, imSum.replace('.fits', '_cat.fits'))
-        renameColumns(imSum.replace('.fits', '_cat.fits'), '_1.0')
+            # add scaled & rotated chi2 images to original, run SExtractor on summed images
+            imSum = im.replace('.fits', '_chi2_sum.fits')
+            addImages(im, rand_im.replace('.fits', '_models.fits'), 1.0, 1.0, imSum)
+            sextract(imSum, imSum.replace('.fits', '_cat.fits'))
+            renameColumns(imSum.replace('.fits', '_cat.fits'), '_1.0')
 
-        # merge new catalog with original
-        newCat = imSum.replace('.fits', '_cat.fits')
-        allCat = im.replace('.fits', '_all_cat.fits')
-        cmd = 'java -jar /home/lejay/.local/bin/stilts.jar tmatch2 in1='+allCat + \
+            # merge new catalog with original
+            newCat = imSum.replace('.fits', '_cat.fits')
+            allCat = im.replace('.fits', '_'+str(i)+'_all_cat.fits')
+            cmd = 'java -jar /home/lejay/.local/bin/stilts.jar tmatch2 in1='+allCat + \
             ' in2='+newCat+' find=best join=all1 matcher=sky params=1 values1="X_WORLD Y_WORLD"' + \
             ' values2="X_WORLD_1.0'+' Y_WORLD_1.0'+'" out='+allCat
-        print(cmd)
-        os.system(cmd)
-        os.system('mv '+allCat+' ./'+allCat.replace('cutout_', ''))
+            print(cmd)
+            os.system(cmd)
+            os.system('mv ' + allCat + ' ./' + allCat.replace('cutout_', ''))
+
+            # stack the four catalogs from for random added cutout images
+            cat_each = table.Table.read(allCat.replace('cutout_', ''))
+            if i == 0:
+                cat_stack = cat_each
+            else:
+                cat_stack = table.vstack([cat_stack, cat_each])
+
         os.system('rm '+im.replace('.fits', '')+'*')
+        cat_stack.write(im.replace('cutout_', '').replace('.fits', '_all_cat.fits'), overwrite=True)
+
     else:
         f = open('./fails.txt', 'a')
         print(im, file=f)
