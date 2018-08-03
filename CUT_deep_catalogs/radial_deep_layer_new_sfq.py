@@ -67,7 +67,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
                     sfq_weights = 1 - cat_neighbors_rand['sfProb']
 
                 if mode == 'count':
-                    counts_gals_rand += sum(sfq_weights/completeness_est(mass_neighbors_rand, ssfr_neighbors_rand, z)) * areas / (np.pi*bin_edges[-1]**2)  # smoothed background, assuming bkg is uniform
+                    counts_gals_rand += sum(sfq_weights) * areas / (np.pi*bin_edges[-1]**2)  # smoothed background, assuming bkg is uniform
                     R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
                     R_m_stack_bkg += R_m
                     R_u_stack_bkg += R_u
@@ -139,9 +139,9 @@ def completeness_est(mass_list, ssfr_list, z):
         completeness = np.array([])
         for idx in range(len(mass_list)):
             if ssfr_list[idx] > -11:
-                completeness = np.append(completeness,np.interp(mass_list[idx], completeness_sf[0], completeness_sf[3]))
+                completeness = np.append(completeness, np.interp(mass_list[idx], completeness_sf[0], completeness_sf[3]))
             else:
-                completeness = np.append(completeness,np.interp(mass_list[idx], completeness_q[0], completeness_q[3]))
+                completeness = np.append(completeness, np.interp(mass_list[idx], completeness_q[0], completeness_q[3]))
 
         completeness[np.isnan(completeness)] = 1.
         return completeness
@@ -149,11 +149,47 @@ def completeness_est(mass_list, ssfr_list, z):
         return np.ones(len(mass_list))
 
 
-def spatial_comp():
-    comp_sf = 1
-    comp_q = 1
-    comp_all = 1
-    return 1
+def spatial_comp2(z, mass_list, radius_list, ssfq):
+
+    def load_comp_curves(mass):
+        mass_bins = [8.5, 9.0, 9.5, 10.2, np.inf]
+        idx = np.searchsorted(mass_bins, mass)
+        masscut_low = str(mass_bins[idx-1])
+        masscut_high = str(mass_bins[idx])
+        comp_sf = np.load('comp_bootstrap_sf_0.6_'+masscut_low+'_'+masscut_high+'.txt')
+        comp_q = np.load('comp_bootstrap_q_0.6_'+masscut_low+'_'+masscut_high+'.txt')
+        comp_all = np.load('comp_bootstrap_all_0.6_'+masscut_low+'_'+masscut_high+'.txt')
+
+        return comp_sf, comp_q, comp_all
+
+    completeness = np.array([])
+    global completeness_l, completeness_h
+    for idx in range(len(mass_list)):
+        mass = mass_list[idx]
+        comp_sf, comp_q, comp_all = load_comp_curves(mass)
+        if ssfq=='all':
+            completeness = np.append(completeness, np.interp(radius_list[idx], bin_edges, np.median(comp_all,axis=0)))
+            completeness_l = np.append(completeness_l, np.interp(radius_list[idx], bin_edges, np.percentile(comp_all,16,axis=0)))
+            completeness_h = np.append(completeness_h, np.interp(radius_list[idx], bin_edges, np.percentile(comp_all,84, axis=0)))
+        elif ssfq=='ssf':
+            completeness = np.append(completeness, np.interp(radius_list[idx], bin_edges, np.median(comp_sf, axis=0)))
+            completeness_l = np.append(completeness_l,np.interp(radius_list[idx], bin_edges, np.percentile(comp_sf, 16, axis=0)))
+            completeness_h = np.append(completeness_h,np.interp(radius_list[idx], bin_edges, np.percentile(comp_sf, 84, axis=0)))
+        else:
+            completeness = np.append(completeness, np.interp(radius_list[idx], bin_edges, np.median(comp_q, axis=0)))
+            completeness_l = np.append(completeness_l,np.interp(radius_list[idx], bin_edges, np.percentile(comp_q, 16, axis=0)))
+            completeness_h = np.append(completeness_h,np.interp(radius_list[idx], bin_edges, np.percentile(comp_q, 84, axis=0)))
+
+    completeness[np.isnan(completeness)] = 1.
+    return completeness
+
+
+def spatial_comp(z, masscut_low, masscut_high, ssfq):
+    comp_bootstrap = np.load('comp_bootstrap_'+ssfq+'_'+str(z)+'_'+masscut_low+'_'+masscut_high+'.txt')
+
+    spatial_weight = np.median(1./comp_bootstrap, axis=0)
+    spatial_weight_err = np.std(1./comp_bootstrap, axis=0)
+    return spatial_weight, spatial_weight_err
 
 # ################# START #####################
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
@@ -161,25 +197,27 @@ mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
 masscut_low = 9.5
-masscut_high = np.inf
+masscut_high = 10.2
+masscut_low_host = 11.15
+masscut_high_host = np.inf
 csfq = 'all'  # csf, cq, all
-ssfq = 'sq'  # ssf, sq, all
-path = 'calibration_deep/'
+ssfq = 'ssf'  # ssf, sq, all
+path = 'test_sfProb/'
+
 bin_number = 14
 bin_edges = 10 ** np.linspace(1, 2.845, num=bin_number+1)
 areas = np.array([])
 for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
-print(mode, csfq, ssfq, masscut_low, masscut_high)
-print('start reading catalogs', end='\r')
 
 # read in data catalog
-cat = Table.read('CUT2_'+cat_name+'.fits')
+print(mode, csfq, ssfq, masscut_low, masscut_high)
+print('start reading catalogs', end='\r')
+cat = Table.read('CUT3_'+cat_name+'.fits')
 cat = cat[cat[z_keyname] < 1]
-# np.logical_and(cat['preds_median'] < 0.89, cat['inside']==True)
 cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside']==True)]
 cat_gal = cat_gal[cat_gal[mass_keyname] > masscut_low]
-cat_massive_gal = cat_gal[cat_gal[mass_keyname] > 11.15]
+cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
 
 # read-in random point catalog
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
@@ -194,12 +232,11 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))  
 
 # main loop
-for z in np.arange(3, 10.1, 1)/10.:
+for z in np.arange(3, 3.1, 1)/10.:
     z_bin_size = 0.09
     print('============='+str(round(z, 1))+'================')
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
-    # cat_massive_z_slice = cat_massive_z_slice[np.random.rand(len(cat_massive_z_slice)) < 0.9]
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.5]
     cat_all_z_slice_bkg = cat_gal[abs(cat_gal[z_keyname] - z) < 1.5 * 0.044 * (1 + z)]
@@ -215,6 +252,8 @@ for z in np.arange(3, 10.1, 1)/10.:
     R_u_stack = np.ones(bin_number)*1e-6  # number of random points (unmasked) in each bin
     R_m_stack_bkg = np.ones(bin_number)*1e-6  # number of random points (masked, bkg apertures) in each bin
     R_u_stack_bkg = np.ones(bin_number)*1e-6  # number of random points (unmasked, bkg apertures) in each bin
+    completeness_l = []
+    completeness_h = []
     # tqdm.tqdm(range(len(cat_massive_z_slice)))
     for gal in cat_massive_z_slice:
         massive_count += 1
@@ -278,7 +317,7 @@ for z in np.arange(3, 10.1, 1)/10.:
         else:
             sfq_weights = 1 - cat_neighbors['sfProb']
 
-        count_binned = np.histogram(radius_list, weights=np.array(sfq_weights/completeness_est(mass_neighbors, ssfr_neighbors,z)), bins=bin_edges)[0]
+        count_binned = np.histogram(radius_list, weights=np.array(sfq_weights), bins=bin_edges)[0]
         sat_counts = np.array(count_binned, dtype='f8')
         R_m, R_u = correct_for_masked_area(gal['RA'], gal['DEC'])
         R_m_stack += R_m
@@ -294,7 +333,7 @@ for z in np.arange(3, 10.1, 1)/10.:
     # background estimation
     flag_bkg = 0
     count_bkg = 0
-    while flag_bkg == 0 and count_bkg < isolated_counts:
+    while (flag_bkg == 0 and count_bkg < isolated_counts) or count_bkg < 3:
         print('Bkg Progress:' + str(count_bkg) + '                                       ', end='\r')
         coord_random_list, sat_bkg, flag_bkg = bkg(cat_all_z_slice_bkg, coord_massive_gal, mode=mode)
         if flag_bkg == 0:
@@ -303,21 +342,25 @@ for z in np.arange(3, 10.1, 1)/10.:
             count_bkg += 1
     radial_dist_bkg = radial_dist_bkg/float(count_bkg)
 
+    # completeness correction
+    spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
+    radial_dist = radial_dist * spatial_weight
+    radial_dist_bkg = radial_dist_bkg * spatial_weight
+
     # output result to file
     filename = path + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z, 1))
     if sum(R_u_stack) < 1:
         # no massive galaxies have desired satellite population
-        np.save(filename + '_err', cal_error2(radial_dist, radial_dist_bkg, isolated_counts) / areas)
-        np.save(filename, (radial_dist / float(isolated_counts)  - radial_dist_bkg) / areas)
+        np.save(filename + '_err', cal_error3(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas)
+        np.save(filename, (radial_dist / float(isolated_counts) - radial_dist_bkg) / areas)
         print('No massive galaxy with desired satellites!')
     else:
         if mode == 'count':
             np.save(filename, (radial_dist*R_u_stack/R_m_stack/float(isolated_counts) -radial_dist_bkg*R_u_stack_bkg/R_m_stack_bkg) / areas)
         elif mode == 'mass':
-            np.save(filename+'_err', cal_error2(radial_dist, radial_dist_bkg, isolated_counts)
-                    *(radial_dist/radial_count_dist)/areas)
+            np.save(filename+'_err', cal_error3(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) *(radial_dist/radial_count_dist)/areas)
 
-        np.save(filename + '_err', cal_error2(radial_dist, radial_dist_bkg, isolated_counts) / areas)
+        np.save(filename + '_err', cal_error3(radial_dist, radial_dist_bkg, isolated_counts) / areas)
         np.save(path + 'bin_edges', bin_edges)
         np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
 
