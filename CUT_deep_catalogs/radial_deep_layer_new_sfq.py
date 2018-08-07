@@ -12,6 +12,7 @@ from plot_bkg import *
 import matplotlib.pyplot as plt
 from mpi4py import MPI
 comm = MPI.COMM_WORLD
+n_procs = comm.Get_size()
 rank = comm.Get_rank()
 
 sys.path.append('../')
@@ -151,7 +152,14 @@ def completeness_est(mass_list, ssfr_list, z):
 
 
 def spatial_comp(z, masscut_low, masscut_high, ssfq):
-    comp_bootstrap = np.genfromtxt('../completeness_curve/comp_bootstrap_'+ssfq+'_'+str(z)+'_'+str(masscut_low)+'_'+str(masscut_high)+'.txt')
+    path_curve = '/home/lejay/research/Winter_2018/completeness_curve/curves/'
+    try:
+        comp_bootstrap = np.genfromtxt(path_curve + 'comp_bootstrap_all_'+ssfq+'_' + str(9.5) + '_' + str(10.2) + '_'
+                                    + str(round(z-0.1, 1)) + '_' + str(round(z+0.1, 1)) + '.txt')
+    except IOError:
+        comp_bootstrap = np.genfromtxt(path_curve + 'comp_bootstrap_all_'+ssfq+'_'+ str(round(z-0.1, 1)) + '_'
+                                       + str(round(z+0.1, 1)) + '_' + str(9.5) + '_' + str(10.2) + '.txt')
+
     spatial_weight = np.median(1./comp_bootstrap, axis=0)
     spatial_weight_err = np.std(1./comp_bootstrap, axis=0)
     return spatial_weight, spatial_weight_err
@@ -161,13 +169,26 @@ cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_d
 mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
-masscut_low = 10.2
+masscut_low = 9.5
 masscut_high = np.inf
-masscut_low_host = 11.15
+z1 = 0.6
+masscut_low_host = 11.15 #11.23 - 0.16*z1/10.
 masscut_high_host = np.inf
+path = './'
 csfq = 'all'  # csf, cq, all
-ssfq = 'sq'  # ssf, sq, all
-path = 'split_sat_mass_new/'
+ssfq = 'all'  # ssf, sq, all
+
+if n_procs>1:
+    if rank==0:
+        z1 = 0.4
+    elif rank==1:
+        z1 = 0.6
+    elif rank==2:
+        z1 = 0.8
+    else:
+        pass
+else:
+    z1=0.6
 
 bin_number = 14
 bin_edges = 10 ** np.linspace(1, 2.845, num=bin_number+1)
@@ -176,7 +197,7 @@ for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-print(mode, csfq, ssfq, masscut_low, masscut_high)
+print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
 print('start reading catalogs', end='\r')
 cat = Table(fits.getdata('CUT3_'+cat_name+'.fits'))
 cat = cat[cat[z_keyname] < 1]
@@ -197,7 +218,8 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))  
 
 # main loop
-for z in np.arange(6, 6.1, 1)/10.:
+for z in np.arange(z1, z1+0.01, 0.1):
+    z = round(z, 1)
     z_bin_size = 0.09
     print('============='+str(round(z, 1))+'================')
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
@@ -308,14 +330,13 @@ for z in np.arange(6, 6.1, 1)/10.:
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
     radial_dist = radial_dist * spatial_weight
     radial_dist_bkg = radial_dist_bkg * spatial_weight
-    print(spatial_weight, spatial_weight_err)
+    # print(spatial_weight, spatial_weight_err)
 
     # aggregate results
     radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
     radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(count_bkg) / areas
     if mode == 'count':
         err = cal_error3(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
-        print(err)
     else:
         err = cal_error3(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) \
               * (radial_dist / radial_count_dist) / areas
@@ -323,7 +344,7 @@ for z in np.arange(6, 6.1, 1)/10.:
     result = np.append([n_central], [n_count, n_err])
 
     # output result to file
-    filename = path + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z, 1))
+    filename = path + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z, 1)) + '.txt'
     if sum(R_u_stack) < 1:
         np.savetxt(filename, result)
         print('No massive galaxy with desired satellites!')
