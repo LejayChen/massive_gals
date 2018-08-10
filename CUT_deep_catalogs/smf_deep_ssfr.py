@@ -3,27 +3,26 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-def completeness_est(mass_list, ssfr_list, z):
+def completeness_est(mass_bin_edges, sfq):
     try:
-        completeness_sf = np.genfromtxt('../mass_completeness_data/allFields_' + str(round(z - 0.1, 1)) + '_z_' + str(round(z + 0.1,1)) + '_sf_nopert_nan.txt')
-        completeness_q = np.genfromtxt('../mass_completeness_data/allFields_' + str(round(z - 0.1, 1)) + '_z_' + str(round(z + 0.1,1)) + '_q_nopert_nan.txt')
+        filename = '../mass_completeness_data/allFields_' + str(round(z - 0.1, 1)) + '_z_' + str(
+            round(z + 0.1, 1)) + '_' + sfq + '_nopert_nan.txt'
+        completeness_corr = np.genfromtxt(filename)
+
         completeness = np.array([])
-        for idx in range(len(mass_list)):
-            if ssfr_list[idx] > ssfr_cut:
-                completeness = np.append(completeness, np.interp(mass_list[idx], completeness_sf[0], completeness_sf[3]))
-            else:
-                completeness = np.append(completeness, np.interp(mass_list[idx], completeness_q[0], completeness_q[3]))
-
-        completeness[np.isnan(completeness)] = 1.
+        for i in range(len(mass_bin_edges)-1):
+            mass = (mass_bin_edges[i]+mass_bin_edges[i+1])/2.
+            completeness = np.append(completeness, np.interp(mass, completeness_corr[0], completeness_corr[3]))
         return completeness
-    except:
-        return np.ones(len(mass_list))
+    except IOError:
+        print('no associated mass completeness file')
+        return np.ones(len(mass_bin_edges)-1)
 
-ssfr_cut = -11
-for z in np.arange(3, 5.1, 2)/10.:
+ssfr_cut = -10.5
+bins = np.arange(7, 12, 0.05)
+for z in np.arange(5, 5.1, 2)/10.:
     mass_list = np.array([])
     ssfr_list = np.array([])
-    sfprob_list = np.array([])
     for cat_name in ['COSMOS_deep', 'SXDS_uddd', 'DEEP_deep', 'ELAIS_deep', 'XMM-LSS_deep']:
         print(cat_name)
         cat = Table.read('CUT3_' + cat_name + '.fits')
@@ -33,25 +32,31 @@ for z in np.arange(3, 5.1, 2)/10.:
         mass_list = np.append(mass_list, cat_gal_z_slice['MASS_MED'])
         ssfr_list = np.append(ssfr_list, cat_gal_z_slice['SSFR_BEST'])
 
-    print('plotting...')
     mass_list = np.array(mass_list)
     ssfr_list = np.array(ssfr_list)
-    plt.hist(mass_list, weights=1. / completeness_est(mass_list, ssfr_list, z),
-             bins=np.arange(7, 12, 0.1), histtype='step', label=str(z),color='k')
 
+    print('plotting all...')
+    all_hist, bin_edges = np.histogram(mass_list, bins=bins)
+    all_hist = all_hist / completeness_est(bin_edges, 'all')
+    all_hist[np.isnan(all_hist)] = 1
+
+    print('plotting sf...')
     sf_mass_list = mass_list[ssfr_list > ssfr_cut]
-    sf_ssfr_list = ssfr_list[ssfr_list > ssfr_cut]
-    plt.hist(sf_mass_list, weights=1. / completeness_est(sf_mass_list, sf_ssfr_list, z),
-             bins=np.arange(7, 12, 0.1), histtype='step', label=str(z), color='b')
+    sf_hist, bin_edges = np.histogram(sf_mass_list, bins=bins)
+    sf_hist = sf_hist / completeness_est(bin_edges, 'sf')
+    sf_hist[np.isnan(sf_hist)] = 1
 
+    print('plotting q...')
     q_mass_list = mass_list[ssfr_list < ssfr_cut]
-    q_ssfr_list = ssfr_list[ssfr_list < ssfr_cut]
-    plt.hist(q_mass_list, weights=1. / completeness_est(q_mass_list, q_ssfr_list, z),
-             bins=np.arange(7, 12, 0.1), histtype='step', label=str(z), color='r')
+    q_hist, bin_edges = np.histogram(q_mass_list, bins=bins)
+    q_hist = q_hist / completeness_est(bin_edges, 'q')
+    q_hist[np.isnan(q_hist)] = 1
+
+    plt.hist(bin_edges[:-1]+0.025, weights=all_hist, bins=bins, histtype='step', color='k', label='z='+str(round(z,1))+',all')
+    plt.hist(bin_edges[:-1]+0.025, weights=sf_hist, bins=bins, histtype='step', color='b', label='sf')
+    plt.hist(bin_edges[:-1]+0.025, weights=q_hist, bins=bins, histtype='step', color='r', label='q')
 
     plt.yscale('log')
-    plt.legend()
-    plt.savefig('../figures/ssfr_smf_all_fields'+str(z)+'.png')
-    # plt.show()
-
-
+    plt.legend(fontsize=13)
+    plt.savefig('../figures/ssfr_smf_all_fields'+str(round(z,1))+'.png')
+    plt.show()
