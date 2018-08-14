@@ -37,15 +37,14 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
         id_rand = int(random() * len(cat_random_copy))
         ra_rand = cat_random_copy[id_rand]['RA']
         dec_rand = cat_random_copy[id_rand]['DEC']
-        idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand,
-                                                   nthneighbor=1)
+        idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
 
         num_before_success += 1
-        if num_before_success > 20:
+        if num_before_success > 25:
             flag_bkg = 1
             break
 
-        if sep2d.degree > 1.4 / dis / np.pi * 180:  # make sure the random pointing is away from any central galaxy (blank)
+        if sep2d.degree > 1.6 / dis / np.pi * 180:  # make sure the random pointing is away from any central galaxy (blank)
             num_before_success = 0
             coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
             coord_rand_list.append(coord_rand)
@@ -89,7 +88,7 @@ def cut_random_cat(cat_rand, coord_list):
     # cut random point catalog to avoid overlapping
     for coord in coord_list:
         coord_rand_list = SkyCoord(cat_rand['RA'] * u.deg, cat_rand['DEC'] * u.deg)
-        cat_rand = cat_rand[coord_rand_list.separation(coord).degree > 1.05 / dis / np.pi * 180]
+        cat_rand = cat_rand[coord_rand_list.separation(coord).degree > 1.4 / dis / np.pi * 180]
     add_to_random_points(coord_list)
     return cat_rand
 
@@ -114,30 +113,34 @@ def correct_for_masked_area(ra, dec):
     cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                         (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-    if len(cat_mask) == 0:  # aperture outside random point catalog region
-        return np.zeros(bin_number), np.zeros(bin_number)
+    if len(cat_nomask) == 0: 
+    	return np.zeros(bin_number), np.zeros(bin_number)
     else:
-        coord = SkyCoord(ra * u.deg, dec * u.deg)
-        coord_nomask = SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg)
-        coord_mask = SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg)
-        radius_list_nomask = coord_nomask.separation(coord).degree / 180. * np.pi * dis * 1000
-        radius_list_mask = coord_mask.separation(coord).degree / 180. * np.pi * dis * 1000
+    	coord = SkyCoord(ra * u.deg, dec * u.deg)
+    	coord_nomask = SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg)
+    	radius_list_nomask = coord_nomask.separation(coord).degree / 180. * np.pi * dis * 1000
+    	count_nomask = np.histogram(radius_list_nomask, bins=bin_edges)[0]
+    	count_nomask = np.array(count_nomask).astype(float)
+    	if len(cat_mask) == 0:
+    		count_mask = np.zeros(bin_number)
+    	else:
+    		coord_mask = SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg)
+    		radius_list_mask = coord_mask.separation(coord).degree / 180. * np.pi * dis * 1000
+    		count_mask = np.histogram(radius_list_mask, bins=bin_edges)[0]
+    		count_mask = np.array(count_mask).astype(float)
 
-        count_nomask = np.histogram(radius_list_nomask, bins=bin_edges)[0]
-        count_mask = np.histogram(radius_list_mask, bins=bin_edges)[0]
-        count_nomask = np.array(count_nomask).astype(float)
-        count_mask = np.array(count_mask).astype(float)
+    	return count_mask, count_nomask
 
-        if len(count_mask[count_mask != 0]) < 3 and len(count_nomask[count_nomask != 0]) > 2:  # point on the edge of random point catalog region
-            return np.zeros(bin_number), np.zeros(bin_number)
+        # if len(count_mask[count_mask != 0]) < 3 and len(count_nomask[count_nomask != 0]) > 2:  # point on the edge of random point catalog region
+        #     return np.zeros(bin_number), np.zeros(bin_number)
 
         # count_mask[count_mask == 0.] = 1
         # count_nomask[count_nomask == 0.] = 1
-        return count_mask, count_nomask
+
 
 
 def spatial_comp(z, masscut_low, masscut_high, ssfq):
-    path_curve = '/home/lejay/research/Winter_2018/completeness_curve/curves_graham/'
+    path_curve = '/Users/lejay/research/massive_gals/completeness_curve/curves_graham/'
     try:
         comp_bootstrap = np.genfromtxt(
             path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(masscut_low) + '_' + str(masscut_high) + '_'
@@ -157,10 +160,10 @@ mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
 masscut_low = 9.5
-masscut_high = np.inf
+masscut_high = 13.0
 masscut_low_host = 11.15  # 11.23 - 0.16*z1/10.0
-masscut_high_host = np.inf
-path = 'with_mask_correction/'
+masscut_high_host = 13.0
+path = 'total_sample/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 
@@ -193,7 +196,7 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 # main loop
-for z in [0.6]:
+for z in [0.6, 0.8]:
     z = round(z, 1)
     z_bin_size = 0.1
     print('=============' + str(round(z, 1)) + '================')
@@ -307,7 +310,7 @@ for z in [0.6]:
     # completeness correction
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
     radial_dist = radial_dist * spatial_weight
-    radial_dist_bkg = radial_dist_bkg * spatial_weight
+    radial_dist_bkg = radial_dist_bkg * np.average(spatial_weight[-3:])
 
     # aggregate results
     radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
@@ -321,7 +324,9 @@ for z in [0.6]:
     result = np.append([n_central], [n_count, n_err])
 
     # output result to file
-    filename = path + str(mode) + cat_name + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
+    print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
+    print('Finished bkgs: '+str(bkg_count))
+    filename = path + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
                + str(ssfq) + '_' + str(round(z, 1)) + '.txt'
 
     if sum(R_u_stack) < 1:
