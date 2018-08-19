@@ -69,7 +69,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
                     sfq_weights = 1 - cat_neighbors_rand['sfProb']
 
                 if mode == 'count':
-                    counts_gals_rand += sum(sfq_weights) * areas / (np.pi * bin_edges[-1] ** 2)  # smoothed background, assuming bkg is uniform
+                    counts_gals_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights), bins=bin_edges)[0]  # smoothed background, assuming bkg is uniform
                     R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
                     R_m_stack_bkg += R_m
                     R_u_stack_bkg += R_u
@@ -130,13 +130,7 @@ def correct_for_masked_area(ra, dec):
     		count_mask = np.array(count_mask).astype(float)
 
     	return count_mask, count_nomask
-
-        # if len(count_mask[count_mask != 0]) < 3 and len(count_nomask[count_nomask != 0]) > 2:  # point on the edge of random point catalog region
-        #     return np.zeros(bin_number), np.zeros(bin_number)
-
-        # count_mask[count_mask == 0.] = 1
-        # count_nomask[count_nomask == 0.] = 1
-
+    	# return np.ones(bin_number), np.ones(bin_number)
 
 
 def spatial_comp(z, masscut_low, masscut_high, ssfq):
@@ -152,36 +146,50 @@ def spatial_comp(z, masscut_low, masscut_high, ssfq):
 
     spatial_weight = 1. / np.nanmedian(comp_bootstrap, axis=0)
     spatial_weight_err = np.nanstd(comp_bootstrap, axis=0)/np.nanmedian(comp_bootstrap, axis=0)**2
+    # return np.ones(bin_number), np.zeros(bin_number)
     return spatial_weight, spatial_weight_err
+
+    
+def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
+    n_comp = np.array(n_sample - n_bkg).astype(float)
+    n_comp[n_comp==0] = 1
+
+    sigma_n_sample_ori = np.sqrt(n_sample/w_comp)
+    sigma_n_sample_corr = np.sqrt(sigma_n_sample_ori**2*w_comp**2 + (n_sample/w_comp)**2*w_comp_err**2)
+    sigma_n_bkg = np.sqrt*(n_bkg)
+    sigma_n_comp = np.sqrt(sigma_n_sample**2+sigma_n_bkg**2)
+    sigma_n_central = np.array(np.sqrt(n_central)).astype(float)
+
+    errors = (n_comp/n_central)*np.sqrt((sigma_n_comp/n_comp)**2+(sigma_n_central/n_central)**2)
+    return errors
 
 # ################# START #####################
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
-masscut_low = 9.5
-masscut_high = 13.0
-masscut_low_host = 11.15  # 11.23 - 0.16*z1/10.0
-masscut_high_host = 13.0
-path = 'total_sample/'
+masscut_low = 9.0
+masscut_high = 9.5
+path = 'split_sat_mass_newer/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
+ssfr_cut = -10.5
+sfprob_cut = 0.4
 
 # setting binning scheme
 bin_number = 14
-bin_edges = 10 ** np.linspace(1, 2.845, num=bin_number + 1)
+bin_edges = 10 ** np.linspace(1.0, 2.845, num=bin_number + 1)
 areas = np.array([])
 for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
-print('start reading catalogs', end='\r')
+print('start reading catalogs', end='\r ')
 cat = Table(fits.getdata('CUT3_' + cat_name + '.fits'))
 cat = cat[cat[z_keyname] < 1]
 cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
 cat_gal = cat_gal[cat_gal[mass_keyname] > masscut_low]
-cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
+
 
 # read-in random point catalog
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
@@ -196,11 +204,16 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 # main loop
-for z in [0.6, 0.8]:
+for z in [0.4, 0.6, 0.8]:
     z = round(z, 1)
     z_bin_size = 0.1
+    masscut_low_host = 11.15
+    masscut_high_host = 13.0
+    print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
     print('=============' + str(round(z, 1)) + '================')
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
+
+    cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.5]
@@ -248,10 +261,10 @@ for z in [0.6, 0.8]:
             continue
 
         # cut on central SF/Q
-        if csfq == 'csf' and gal['SSFR_BEST'] < -11:
+        if csfq == 'csf' and gal['sfProb'] < sfprob_cut:
             isolated_counts -= 1
             continue
-        elif csfq == 'cq' and gal['SSFR_BEST'] > -11:
+        elif csfq == 'cq' and gal['sfProb'] > sfprob_cut:
             isolated_counts -= 1
             continue
 
@@ -328,11 +341,11 @@ for z in [0.6, 0.8]:
     print('Finished bkgs: '+str(bkg_count))
     filename = path + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
                + str(ssfq) + '_' + str(round(z, 1)) + '.txt'
-
+    np.save(path + 'bin_edges', bin_edges)
+    np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
     if sum(R_u_stack) < 1:
         np.savetxt(filename, result)
         print('No massive galaxy with desired satellites!')
     else:
         np.savetxt(filename, result)
-        np.save(path + 'bin_edges', bin_edges)
-        np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
+        
