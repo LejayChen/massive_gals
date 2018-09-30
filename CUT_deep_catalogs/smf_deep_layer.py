@@ -45,8 +45,13 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand):
             cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 0.7/dis/np.pi*180]
             cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 0.7/dis/np.pi*180]
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
-            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7/dis/np.pi*180]
-            
+
+            # choose radial range
+            cat_neighbors_rand = cat_neighbors_rand[np.logical_and(coord_neighbors_rand.separation(coord_rand).degree < 0.7/dis/np.pi*180,
+                coord_neighbors_rand.separation(coord_rand).degree >0.06/dis/np.pi*180)]
+
+            # cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7/dis/np.pi*180]
+
             # make some cuts
             cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] > masscut_low]
             cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < masscut_high]
@@ -146,8 +151,8 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))  
 
 # main loop
-for z in np.arange(3, 3.1, 3)/10.:
-    z_bin_size = 0.09
+for z in np.arange(4, 4.1, 3)/10.:
+    z_bin_size = 0.1
     print('============='+str(round(z, 1))+'================')
 
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
@@ -174,10 +179,12 @@ for z in np.arange(3, 3.1, 3)/10.:
         if len(cat_neighbors) == 0:  # central gals which has no companion
             continue
         else:
+            # choose sats within 700kpc
             ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.7 / dis / np.pi * 180)
             cat_neighbors = cat_neighbors[ind[0]]
 
-            ind2 = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.05 / dis / np.pi * 180)
+            # exclude sats within 60 kpc
+            ind2 = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.06 / dis / np.pi * 180)
             cat_neighbors = np.delete(cat_neighbors, ind2[0], axis=0)
 
             cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]
@@ -230,7 +237,7 @@ for z in np.arange(3, 3.1, 3)/10.:
     smf_dist_bkg = smf_dist_bkg/float(count_bkg)
 
     # output result to file
-    filename = path + 'smf_' + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z, 1))
+    filename = path + 'smf_60kpc_' + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z, 1))
     print(sum(smf_dist))
     print(sum(smf_dist_bkg*isolated_counts))
     np.save(filename+'_total', smf_dist)
