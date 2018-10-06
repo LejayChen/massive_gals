@@ -1,5 +1,7 @@
 *.fits
 *.sh
+DS_store
+CUT_deep_catalogs/DS_store
 CUT_deep_catalogs/s16a_COSMOS_deep_random.fits
 CUT_deep_catalogs/s16a_COSMOS_uddd_random.fits
 CUT_deep_catalogs/s16a_DEEP_deep_random.fits
