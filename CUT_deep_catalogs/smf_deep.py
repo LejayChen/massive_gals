@@ -26,7 +26,7 @@ for z in np.arange(5, 5.1, 2)/10.:
     sfprob_list = np.array([])
     for cat_name in ['COSMOS_deep', 'SXDS_uddd', 'DEEP_deep', 'ELAIS_deep', 'XMM-LSS_deep']:
         print(cat_name)
-        cat = Table.read('CUT3_' + cat_name + '.fits')
+        cat = Table.read('/Users/lejay/research/catalogs/CUT3_' + cat_name + '.fits')
         cat = cat[cat['zKDEPeak'] < 1]
         cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
         cat_gal_z_slice = cat_gal[abs(cat_gal['zKDEPeak'] - z) < 0.1]
@@ -52,10 +52,10 @@ for z in np.arange(5, 5.1, 2)/10.:
     plt.hist(bin_edges[:-1]+0.025, weights=all_hist, bins=bins, histtype='step', color='k', label='z='+str(round(z,1))+',all')
     plt.hist(bin_edges[:-1]+0.025, weights=sf_hist, bins=bins, histtype='step', color='b', label='sf')
     plt.hist(bin_edges[:-1]+0.025, weights=q_hist, bins=bins, histtype='step', color='r', label='q')
+    plt.annotate('sfProb selection',xy=(0.1,0.9),xycoords='figure fraction',fontsize=12)
 
     plt.yscale('log')
     plt.legend(fontsize=13)
-    plt.savefig('../figures/sfprob_smf_all_fields'+str(round(z,1))+'.png')
-    plt.show()
+    plt.savefig('../figures/sfprob_smf_all_fields_'+str(round(z,1))+'.png', dpi=200)
 
 

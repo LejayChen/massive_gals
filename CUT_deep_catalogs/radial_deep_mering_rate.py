@@ -88,23 +88,23 @@ def correct_for_masked_area(ra, dec):
     cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                         (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-    if len(cat_nomask) == 0: 
-    	return np.zeros(bin_number), np.zeros(bin_number)
+    if len(cat_nomask) == 0:
+        return np.zeros(bin_number), np.zeros(bin_number)
     else:
-    	coord = SkyCoord(ra * u.deg, dec * u.deg)
-    	coord_nomask = SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg)
-    	radius_list_nomask = coord_nomask.separation(coord).degree / 180. * np.pi * dis * 1000
-    	count_nomask = np.histogram(radius_list_nomask, bins=bin_edges)[0]
-    	count_nomask = np.array(count_nomask).astype(float)
-    	if len(cat_mask) == 0:
-    		count_mask = np.zeros(bin_number)
-    	else:
-    		coord_mask = SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg)
-    		radius_list_mask = coord_mask.separation(coord).degree / 180. * np.pi * dis * 1000
-    		count_mask = np.histogram(radius_list_mask, bins=bin_edges)[0]
-    		count_mask = np.array(count_mask).astype(float)
+        coord = SkyCoord(ra * u.deg, dec * u.deg)
+        coord_nomask = SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg)
+        radius_list_nomask = coord_nomask.separation(coord).degree / 180. * np.pi * dis * 1000
+        count_nomask = np.histogram(radius_list_nomask, bins=bin_edges)[0]
+        count_nomask = np.array(count_nomask).astype(float)
+        if len(cat_mask) == 0:
+            count_mask = np.zeros(bin_number)
+        else:
+            coord_mask = SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg)
+            radius_list_mask = coord_mask.separation(coord).degree / 180. * np.pi * dis * 1000
+            count_mask = np.histogram(radius_list_mask, bins=bin_edges)[0]
+            count_mask = np.array(count_mask).astype(float)
 
-    	return count_mask, count_nomask
+        return count_mask, count_nomask
 
 
 def spatial_comp(z, masscut_low, masscut_high, ssfq):
@@ -136,12 +136,14 @@ def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
     errors = (n_comp/n_central)*np.sqrt((sigma_n_comp/n_comp)**2+(sigma_n_central/n_central)**2)
     return errors
 
+
 def merge_est_k(r, m_cen, z):
     m = 10 ** (m_cen - 10)
     h = 1
     t_merge = 3.2*(r/50.) * (m/4*h)**(-0.3) * (1+z/20.)  # Gyr
 
     return np.array(t_merge)
+
 
 def merge_est_j(r, m_sat, m_cen):
     m_sat = 10 ** (m_sat - 10)
@@ -152,9 +154,10 @@ def merge_est_j(r, m_sat, m_cen):
 
     return np.array(t_merge)
 
-def n_merge(z1,z2,r_list, m_sat, m_cen):
+
+def n_merge(z1, z2, r_list, m_sat, m_cen):
     t_between = WMAP9.lookback_time(z1).value - WMAP9.lookback_time(z2).value
-    t_merge_list = merge_est_k(r_list, m_cen, z1)
+    # t_merge_list = merge_est_k(r_list, m_cen, z1)
     t_merge_list = merge_est_j(r_list, m_sat, m_cen)
     r_list = r_list[t_merge_list<t_between]
 
@@ -163,6 +166,7 @@ def n_merge(z1,z2,r_list, m_sat, m_cen):
     m_merge = sum(10**(m_sat-8))
 
     return len(r_list), m_merge
+
 
 # ################# START #####################
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
@@ -203,7 +207,7 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 # main loop
-for z in [0.4,0.6,0.8]:
+for z in [0.4, 0.6, 0.8]:
     z = round(z, 1)
     z_bin_size = 0.1
     masscut_low_host = 11.15

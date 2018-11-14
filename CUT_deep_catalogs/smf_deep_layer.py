@@ -99,8 +99,8 @@ mass_keyname = 'MASS_MED'
 masscut_low = 7.0
 masscut_high = 12.0
 csfq = 'all'  # csf, cq, all
-r_high = 0.7  # Mpc
-r_low = 0.2  # Mpc
+r_high = 0.06  # Mpc
+r_low = 0.0  # Mpc
 
 if rank==0:
     ssfq = 'all'  # ssf, sq, all
