@@ -4,26 +4,23 @@ import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 from astropy.cosmology import WMAP9
-from astropy.table import Table
+from astropy.table import *
 from astropy.io import fits
 from scipy import stats
 from sklearn.neighbors import KDTree
-from mpi4py import MPI
-
-comm = MPI.COMM_WORLD
-n_procs = comm.Get_size()
-rank = comm.Get_rank()
 
 
 def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
     # __init__
     global R_m_stack_bkg, R_u_stack_bkg, z
-    counts_gals_rand = 0
+
     n = 0
     num_p = 1  # number of blank pointing's per central
-    coord_rand_list = []
-    num_before_success = 0
     flag_bkg = 0
+    counts_gals_rand = 0
+    num_before_success = 0
+    coord_rand_list = []
+
     while n < num_p:  # get several blank pointing's to estimate background
         id_rand = int(random() * len(cat_random_copy))
         ra_rand = cat_random_copy[id_rand]['RA']
@@ -168,11 +165,11 @@ mass_keyname = 'MASS_MED'
 masscut_low = 9.5
 masscut_high = 13.0
 path = 'total_sample_sfprob_3bins/'
-csfq = 'cq'  # csf, cq, all
+csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 ssfr_cut = -10.5
-sfprob_cut_low = 0.5
-sfprob_cut_high = 0.5
+sfprob_cut_low = 0.4
+sfprob_cut_high = 0.8
 prefix=''
 
 # setting binning scheme
@@ -222,6 +219,7 @@ for z in [0.4, 0.6, 0.8]:
     radial_dist_bkg = 0  # radial distribution of background contaminations
     radial_count_dist = 0  # radial number density distribution of satellites (used in mass mode)
     isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
+    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x,y in cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
     massive_count = 0
     bkg_count = 0
     bin_centers_stack = 0
@@ -263,6 +261,9 @@ for z in [0.4, 0.6, 0.8]:
         if gal[mass_keyname] < max(cat_neighbors[mass_keyname]):  # no more-massive companions
             isolated_counts -= 1
             continue
+
+        # add to the central catalog
+        isolated_cat.add_row(gal)
 
         # cut on central SF/Q
         if csfq == 'csf' and gal['sfProb'] < sfprob_cut_high:
@@ -328,9 +329,18 @@ for z in [0.4, 0.6, 0.8]:
 
         # keep record of how many satellites a central has
         n_sat.append(sum(sat_counts))
-        n_bkg.append(sum(bkg_count))
+        n_bkg.append(sum(sat_counts_bkg))
+
 
     ########## Aggregation of Results ##################
+
+    # output central catalog
+    if csfq == 'all':
+        print(len(n_sat), len(n_bkg),len(isolated_cat))
+        n_sat_col = Column(data=n_sat, name='n_sat', dtype='i4')
+        n_bkg_col = Column(data=n_bkg, name='n_bkg', dtype='i4')
+        isolated_cat.add_columns([n_sat_col, n_bkg_col])
+        isolated_cat.write('isolated.fits', overwrite=True)
 
     # detection completeness correction
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
