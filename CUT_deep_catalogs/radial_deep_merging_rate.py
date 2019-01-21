@@ -159,13 +159,16 @@ def n_merge(z1, z2, r_list, m_sat, m_cen):
     t_between = WMAP9.lookback_time(z1).value - WMAP9.lookback_time(z2).value
     # t_merge_list = merge_est_k(r_list, m_cen, z1)
     t_merge_list = merge_est_j(r_list, m_sat, m_cen)
-    r_list = r_list[t_merge_list<t_between]
 
-    # mass_merge
+    # merge
     m_sat = m_sat[t_merge_list<t_between]
     m_merge = sum(10**(m_sat-8))
+    n_merge = sum(np.ones(len(r_list))*t_merge_list/t_between)
 
-    return len(r_list), m_merge
+    # alternatively
+    # n_merge = r_list[t_merge_list<t_between]
+
+    return n_merge, m_merge
 
 
 # ################# START #####################

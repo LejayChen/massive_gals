@@ -31,7 +31,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
 
         num_before_success += 1
-        if num_before_success > 1000:
+        if num_before_success > 100:
             flag_bkg = 1
             break
 
@@ -47,6 +47,8 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
             # make some cuts
             cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] > masscut_low]
             cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < masscut_high]
+            cat_neighbors_rand.write('background_catalogs/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(
+                round(gal['zKDEPeak'], 2)) + '_' + '.fits', overwrite=True)
 
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             radius_neighbors_rand = coord_neighbors_rand.separation(coord_rand).degree / 180. * np.pi * dis * 1000
@@ -158,12 +160,6 @@ def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
     errors = (n_comp/n_central)*np.sqrt((sigma_n_comp/n_comp)**2+(sigma_n_central/n_central)**2)
     return errors
 
-
-def Ms_to_r200(log_Ms):
-    r200  = log_Ms
-    return r200
-
-
 # ################# START #####################
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 mode = sys.argv[2]  # 'count' or 'mass'
@@ -171,12 +167,13 @@ z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
 masscut_low = 9.5
 masscut_high = 13.0
-path = 'split_sat_mass_allz/'
-prefix = ''
-csfq = 'all'  # csf, cq, all
+path = 'total_sample_sfprob_3bins/'
+csfq = 'cq'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 ssfr_cut = -10.5
-sfprob_cut = 0.5
+sfprob_cut_low = 0.5
+sfprob_cut_high = 0.5
+prefix=''
 
 # setting binning scheme
 bin_number = 14
@@ -190,7 +187,7 @@ print('start reading catalogs', end='\r ')
 cat = Table(fits.getdata('s16a_' + cat_name + '_masterCat.fits'))
 cat = cat[cat[z_keyname] < 1]
 cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
-cat_gal = cat_gal[cat_gal[mass_keyname] > 8.0]
+cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
 
 # read-in random point catalog
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
@@ -204,7 +201,8 @@ cat_random = cat_random[cat_random['MASK'] == False]
 # to store position of selected random apertures
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
-# main loop
+############# main loop ################
+
 for z in [0.4, 0.6, 0.8]:
     z = round(z, 1)
     z_bin_size = 0.1
@@ -220,40 +218,45 @@ for z in [0.4, 0.6, 0.8]:
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.5]
 
     # initiations
-    radial_dist = 0
-    radial_dist_bkg = 0
-    radial_count_dist = 0
-    isolated_counts = len(cat_massive_z_slice)
+    radial_dist = 0  # radial distribution of satellites
+    radial_dist_bkg = 0  # radial distribution of background contaminations
+    radial_count_dist = 0  # radial number density distribution of satellites (used in mass mode)
+    isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
     massive_count = 0
     bkg_count = 0
     bin_centers_stack = 0
     companion_count_stack = 0
+    n_sat = []  # number of satellites per central
+    n_bkg = []  # number of bkg contamination per central
 
     R_m_stack = np.ones(bin_number) * 1e-6  # number of random points (masked) in each bin
     R_u_stack = np.ones(bin_number) * 1e-6  # number of random points (unmasked) in each bin
     R_m_stack_bkg = np.ones(bin_number) * 1e-6  # number of random points (masked, bkg apertures) in each bin
     R_u_stack_bkg = np.ones(bin_number) * 1e-6  # number of random points (unmasked, bkg apertures) in each bin
 
+    # loop for all massive galaxies (potential central galaxy candidate)
     for gal in cat_massive_z_slice:
         massive_count += 1
         print('Progress:' + str(massive_count) + '/' + str(len(cat_massive_z_slice)), end='\r')
         dis = WMAP9.angular_diameter_distance(gal[z_keyname]).value
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
 
-        # prepare neighbors catalog
+        # prepare neighbors catalog (first square cut)
         cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice[z_keyname] - gal[z_keyname]) < 1.5 * 0.044 * (1 + z)]
         cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 0.7 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 0.7 / dis / np.pi * 180]
 
-        if len(cat_neighbors) == 0:  # central gals which has no companion
-            print(gal['NUMBER'])
+        # circular aperture selection
+        # skip centrals that have no satellites
+        if len(cat_neighbors) == 0:
+            print('No Satellite for', gal['NUMBER'])
             continue
         else:
             ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.7 / dis / np.pi * 180)
             cat_neighbors = cat_neighbors[ind[0]]
-            cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]
-            if len(cat_neighbors) == 0:  # central gals which has no companion
-                print(gal['NUMBER'])
+            cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]  # exclude central galaxy from satellite catalog
+            if len(cat_neighbors) == 0:
+                print('No Satellite for', gal['NUMBER'])
                 continue
 
         # isolation cut on central
@@ -261,30 +264,26 @@ for z in [0.4, 0.6, 0.8]:
             isolated_counts -= 1
             continue
 
-        # output several cat_neighbor's for cluster validation
-        # if len(cat_neighbors) > 110:
-        #     cat_neighbors.add_row(gal)
-        #     cat_neighbors.write('satellite_catalogs/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(round(gal['zKDEPeak'], 2)) + '_' + str(round(gal['sfProb'],2)) + '_' + '.fits', overwrite=True)
-        #     cat_neighbors.remove_row(-1)
-
         # cut on central SF/Q
-        if csfq == 'csf' and gal['sfProb'] < sfprob_cut:
+        if csfq == 'csf' and gal['sfProb'] < sfprob_cut_high:
             isolated_counts -= 1
             continue
-        elif csfq == 'cq' and gal['sfProb'] > sfprob_cut:
+        elif csfq == 'cq' and gal['sfProb'] > sfprob_cut_low:
             isolated_counts -= 1
             continue
 
-        # cut on companion sample (cut the final sample)
+        # cut on satellite sample (mass cut, ssfr cut)
         cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > masscut_low]
         cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < masscut_high]
         mass_neighbors = cat_neighbors[mass_keyname]
         ssfr_neighbors = cat_neighbors['SSFR_BEST']
-        if len(cat_neighbors) == 0:  # central gals which has no companion
-            continue
-
+        if len(cat_neighbors) == 0: continue  # central gals which has no satellite
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         radius_list = coord_neighbors.separation(coord_gal).degree / 180. * np.pi * dis * 1000  # kpc
+
+        # save satellite catalog (no bkg subtraction)
+        cat_neighbors.write('satellite_catalogs/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(
+            round(gal['zKDEPeak'], 2)) + '_' + str(round(gal['sfProb'], 2)) + '_' + '.fits', overwrite=True)
 
         # get mean radius value of companions in each bin and stack
         bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=bin_edges)
@@ -296,7 +295,7 @@ for z in [0.4, 0.6, 0.8]:
         bin_centers_stack += bin_centers * len(radius_list)
         companion_count_stack += len(radius_list)
 
-        # Core Function: statistics #
+        ### Core Function: statistics ###
         if ssfq == 'all':
             sfq_weights = np.ones(len(radius_list))
         elif ssfq == 'ssf':
@@ -327,14 +326,22 @@ for z in [0.4, 0.6, 0.8]:
                 bkg_count = bkg_count + 1
         cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)
 
+        # keep record of how many satellites a central has
+        n_sat.append(sum(sat_counts))
+        n_bkg.append(sum(bkg_count))
+
+    ########## Aggregation of Results ##################
+
     # detection completeness correction
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
     radial_dist = radial_dist * spatial_weight
     radial_dist_bkg = radial_dist_bkg * np.average(spatial_weight[-3:])
 
-    # aggregate results
+    # normalize number counts to by counting area and number of centrals
     radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
     radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) / areas
+
+    # error estimation (assuming Poisson errors)
     if mode == 'count':
         err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
     else:
@@ -347,7 +354,7 @@ for z in [0.4, 0.6, 0.8]:
     print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
     print('Finished bkgs: '+str(bkg_count))
     filename = path + prefix + str(mode) + cat_name + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + str(round(z, 1)) + '.txt'
+               + str(ssfq) + '_' + 'allz' + '.txt'
     np.save(path + prefix + 'bin_edges', bin_edges)
     np.save(path + prefix + 'bin_centers', bin_centers_stack / companion_count_stack)
     if sum(R_u_stack) < 1:
