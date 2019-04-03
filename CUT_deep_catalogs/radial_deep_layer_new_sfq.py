@@ -163,15 +163,16 @@ mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
 masscut_low = 9.5
-masscut_high = 13.0
+masscut_high = 10.0
 isolation_factor = 1
-path = 'split_host_mass_noiso/'
+path = 'split_host_mass/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 # ssfr_cut = -10.5
 sfprob_cut_low = 0.5
 sfprob_cut_high = 0.5
-prefix=''
+split_central_mass = True
+
 
 # setting binning scheme
 bin_number = 14
@@ -201,16 +202,15 @@ cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 ############# main loop ################
 
-for z in [0.4]:
+for z in [0.4, 0.6, 0.8]:
     z = round(z, 1)
     z_bin_size = 0.1
-    masscut_low_host = 11.3
+    masscut_low_host = 11.15
     masscut_high_host = 13.0
 
     print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
     print('=============' + str(round(z, 1)) + '================')
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
-    print(len(cat_random_copy))
 
     cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
@@ -369,7 +369,13 @@ for z in [0.4]:
     # output result to file
     print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
     print('Finished bkgs: '+str(bkg_count))
-    filename = path + prefix + str(mode) +cat_name + '_host_' +str(masscut_low_host) + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
+
+    if split_central_mass == True:
+        prefix = 'host_'+str(masscut_low_host)
+    else:
+        prefix = ''
+
+    filename = path  + str(mode) +cat_name + prefix + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
                + str(ssfq) + '_' + str(z) + '.txt'
     np.save(path + prefix + 'bin_edges', bin_edges)
     np.save(path + prefix + 'bin_centers', bin_centers_stack / companion_count_stack)
