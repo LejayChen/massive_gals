@@ -124,20 +124,23 @@ def correct_for_masked_area(ra, dec):
 
 
 def spatial_comp(z, masscut_low, masscut_high, ssfq):
-    path_curve = '/Users/lejay/research/massive_gals/completeness_curve/curves_graham/'
-    try:
-        comp_bootstrap = np.genfromtxt(
-            path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(masscut_low) + '_' + str(masscut_high) + '_'
-            + str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
-    except IOError:
-        comp_bootstrap = np.genfromtxt(
-            path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(round(z - 0.1, 1)) + '_'
-            + str(round(z + 0.1, 1)) + '_' + str(masscut_low) + '_' + str(masscut_high) + '.txt')
+    if not correct_completeness:
+        return np.ones(bin_number), np.zeros(bin_number)
+    else:
+        path_curve = '/Users/lejay/research/massive_gals/completeness_curve/curves_graham/'
+        try:
+            comp_bootstrap = np.genfromtxt(
+                path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(masscut_low) + '_' + str(masscut_high) + '_'
+                + str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
+        except IOError:
+            comp_bootstrap = np.genfromtxt(
+                path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(round(z - 0.1, 1)) + '_'
+                + str(round(z + 0.1, 1)) + '_' + str(masscut_low) + '_' + str(masscut_high) + '.txt')
 
-    spatial_weight = 1. / np.nanmedian(comp_bootstrap, axis=0)
-    spatial_weight_err = np.nanstd(comp_bootstrap, axis=0)/np.nanmedian(comp_bootstrap, axis=0)**2
-    # return np.ones(bin_number), np.zeros(bin_number)
-    return spatial_weight, spatial_weight_err
+        spatial_weight = 1. / np.nanmedian(comp_bootstrap, axis=0)
+        spatial_weight_err = np.nanstd(comp_bootstrap, axis=0)/np.nanmedian(comp_bootstrap, axis=0)**2
+
+        return spatial_weight, spatial_weight_err
 
     
 def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
@@ -163,16 +166,19 @@ mode = sys.argv[2]  # 'count' or 'mass'
 z_keyname = 'zKDEPeak'
 mass_keyname = 'MASS_MED'
 masscut_low = 9.5
-masscut_high = 10.0
+masscut_high = 13.0
 isolation_factor = 1
-path = 'split_host_mass/'
+path = 'total_sample/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 # ssfr_cut = -10.5
 sfprob_cut_low = 0.5
 sfprob_cut_high = 0.5
-split_central_mass = True
 
+# run settings
+split_central_mass = False
+all_z = True
+correct_completeness = True
 
 # setting binning scheme
 bin_number = 14
@@ -202,14 +208,20 @@ cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 ############# main loop ################
 
-for z in [0.4, 0.6, 0.8]:
+for z in [0.6]:
     z = round(z, 1)
-    z_bin_size = 0.1
+    if all_z == True:
+        z_bin_size = 0.3
+    else:
+        z_bin_size = 0.1
+
+    # mass cut for centrals
     masscut_low_host = 11.15
     masscut_high_host = 13.0
 
+    print('=============' + str(round(z-z_bin_size, 1)) + '<z<'+str(round(z+z_bin_size, 1))+'================')
     print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
-    print('=============' + str(round(z, 1)) + '================')
+
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
 
     cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
@@ -261,9 +273,9 @@ for z in [0.4, 0.6, 0.8]:
                 continue
 
         # isolation cut on central
-        # if gal[mass_keyname] < np.log10(isolation_factor) + max(cat_neighbors[mass_keyname]):  # no more-massive companions
-        #     isolated_counts -= 1
-        #     continue
+        if gal[mass_keyname] < np.log10(isolation_factor) + max(cat_neighbors[mass_keyname]):  # no more-massive companions
+            isolated_counts -= 1
+            continue
 
         # add to the central catalog
         isolated_cat.add_row(gal)
@@ -336,14 +348,11 @@ for z in [0.4, 0.6, 0.8]:
         # keep record of how many satellites a central has
         n_sat.append(sum(sat_counts))
 
-    print('isolated centrals',isolated_counts)
     ########## Aggregation of Results ##################
-
     # output central catalog
     if csfq == 'all' and ssfq == 'all':
         n_sat_col = Column(data=n_sat, name='n_sat', dtype='i4')
         n_bkg_col = Column(data=np.ones(len(n_sat))*sum(radial_dist_bkg)/float(isolated_counts), name='n_bkg', dtype='i4')
-        print(len(n_sat), len(isolated_cat))
 
         isolated_cat.add_columns([n_sat_col, n_bkg_col])
         isolated_cat.write('massive_gal_positions/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+str(z)+'.positions.fits', overwrite=True)
@@ -370,13 +379,13 @@ for z in [0.4, 0.6, 0.8]:
     print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
     print('Finished bkgs: '+str(bkg_count))
 
-    if split_central_mass == True:
-        prefix = 'host_'+str(masscut_low_host)
-    else:
-        prefix = ''
+    # output file naming options
+    prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
+    z_output = 'allz' if all_z else str(z)
 
-    filename = path  + str(mode) +cat_name + prefix + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + str(z) + '.txt'
+    # output
+    filename = path + str(mode) + cat_name + prefix + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output + '.txt'
     np.save(path + prefix + 'bin_edges', bin_edges)
     np.save(path + prefix + 'bin_centers', bin_centers_stack / companion_count_stack)
     if sum(R_u_stack) < 1:
