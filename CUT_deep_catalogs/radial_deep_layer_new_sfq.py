@@ -168,16 +168,16 @@ mass_keyname = 'MASS_MED'
 masscut_low = 9.5
 masscut_high = 13.0
 isolation_factor = 1
-path = 'total_sample/'
+path = 'conformity_sfProb_2_8/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 # ssfr_cut = -10.5
-sfprob_cut_low = 0.5
-sfprob_cut_high = 0.5
+sfprob_cut_low = 0.2
+sfprob_cut_high = 0.8
 
 # run settings
 split_central_mass = False
-all_z = True
+all_z = False
 correct_completeness = True
 
 # setting binning scheme
@@ -208,7 +208,7 @@ cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 ############# main loop ################
 
-for z in [0.6]:
+for z in [0.4, 0.6, 0.8]:
     z = round(z, 1)
     if all_z == True:
         z_bin_size = 0.3

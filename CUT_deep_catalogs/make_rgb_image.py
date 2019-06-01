@@ -6,6 +6,16 @@ from astropy.table import Table
 from astropy.io import fits
 
 
+def download_image_single(tract, patch,band):
+    tract = str(tract)
+    patch = str(patch)
+    img = 'calexp-HSC-'+str(band)+'-'+tract+'-'+patch+'.fits'
+    os.system('vcp vos:clauds/coupon/s16a_udeep_deep_depth.ext_v2.0/deepCoadd/HSC-'+band+'/'
+              + tract + '/' + patch + '/' + img + ' ./ --verbose')
+
+    return img
+
+
 def download_image(tract, patch):
     tract = str(tract)
     patch = str(patch)
@@ -54,6 +64,27 @@ def cut_rgb_image(tract, patch, ra, dec):
     os.system('rm '+img_r+' '+img_g+' '+img_b)
     os.system('rm cube.fits')
     return output_img, True
+
+
+def cut_i_band_img(tract, patch, ra, dec, band):
+    width = 6 / 3600.0  # in degree
+    img = download_image_single(tract, patch,'I')
+
+    try:
+        cutoutimg(img, ra, dec, xw=width, yw=width, units='wcs', outfile='central_'+str(band)+'.fits',
+                  overwrite=True, useMontage=False, coordsys='celestial', verbose=False, centerunits=None)
+    except:
+        os.system('rm ' + img)
+        return 'no output img', False
+
+    # output_img = str(band)+'_image.png'
+    # img = aplpy.FITSFigure('central_'+str(band)+'.fits')
+    # img.show_grayscale()
+    # img.remove_grid()
+    # img.save(output_img)
+    #
+    # os.system('rm ' + 'central_'+str(band)+'.fits')
+    return 'central_'+str(band)+'.fits', True
 
 
 if __name__ == '__main__':

@@ -65,7 +65,7 @@ def cutoutimg(filename, xc, yc, xw=25, yw=25, units='pixels', outfile=None,
     else:
         raise Exception("cutout: Input file is wrong type (string or HDUList are acceptable).")
 
-    head = file[1].header.copy()
+    head = file[0].header.copy()
 
     if head['NAXIS'] > 2:
         raise DimensionError("Too many (%i) dimensions!" % head['NAXIS'])
@@ -129,7 +129,7 @@ def cutoutimg(filename, xc, yc, xw=25, yw=25, units='pixels', outfile=None,
         if head.get('NAXIS1') == 0 or head.get('NAXIS2') == 0:
             raise ValueError("Map has a 0 dimension: %i,%i." % (head.get('NAXIS1'),head.get('NAXIS2')))
 
-        img = file[1].data[int(ymin):int(ymax), int(xmin):int(xmax)]
+        img = file[0].data[int(ymin):int(ymax), int(xmin):int(xmax)]
         newfile = pyfits.PrimaryHDU(data=img, header=head)
         if verbose: print("Cut image %s with dims %s to %s.  xrange: %f:%f, yrange: %f:%f" % (filename, file[0].data.shape,img.shape,xmin,xmax,ymin,ymax))
 

@@ -94,15 +94,15 @@ def add_to_random_points(coord_list):
 def correct_for_masked_area(ra, dec):
     # correct area for normalization if it is partially in masked region
 
-    cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 0.7 / dis / np.pi * 180]
-    cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+    cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < (r200/1000) / dis / np.pi * 180]
+    cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < (r200/1000) / dis / np.pi * 180]
     cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg).separation
-                            (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
+                            (SkyCoord(ra * u.deg, dec * u.deg)).degree < (r200/1000) / dis / np.pi * 180]
 
-    cat_mask = cat_random[abs(cat_random['RA'] - ra) < 0.7 / dis / np.pi * 180]
-    cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+    cat_mask = cat_random[abs(cat_random['RA'] - ra) < (r200/1000) / dis / np.pi * 180]
+    cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < (r200/1000) / dis / np.pi * 180]
     cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
-                        (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
+                        (SkyCoord(ra * u.deg, dec * u.deg)).degree < (r200/1000) / dis / np.pi * 180]
 
     if len(cat_nomask) == 0:
         return np.zeros(bin_number), np.zeros(bin_number)
@@ -110,14 +110,14 @@ def correct_for_masked_area(ra, dec):
         coord = SkyCoord(ra * u.deg, dec * u.deg)
         coord_nomask = SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg)
         radius_list_nomask = coord_nomask.separation(coord).degree / 180. * np.pi * dis * 1000
-        count_nomask = np.histogram(radius_list_nomask, bins=bin_edges)[0]
+        count_nomask = np.histogram(radius_list_nomask, bins=bin_edges*r200)[0]
         count_nomask = np.array(count_nomask).astype(float)
         if len(cat_mask) == 0:
             count_mask = np.zeros(bin_number)
         else:
             coord_mask = SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg)
             radius_list_mask = coord_mask.separation(coord).degree / 180. * np.pi * dis * 1000
-            count_mask = np.histogram(radius_list_mask, bins=bin_edges)[0]
+            count_mask = np.histogram(radius_list_mask, bins=bin_edges*r200)[0]
             count_mask = np.array(count_mask).astype(float)
 
         return count_mask, count_nomask
@@ -171,7 +171,7 @@ def Ms_to_r200(log_Ms):
     log_mh = np.log10(M1) + beta * np.log10(Ms / Ms0) + (Ms / Ms0) ** delta / (1 + (Ms / Ms0) ** (-1 * gamma)) - 0.5
     r200 = ((3*10**log_mh*1.989e30*1e3)/(800*np.pi*rho_bar))**(1/3)/3.086e21
 
-    return r200
+    return r200  # in kpc
 
 
 # ################# START #####################
@@ -209,7 +209,7 @@ cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
 
 # main loop
-for z in [0.4]:
+for z in [0.6]:
     z = round(z, 1)
     z_bin_size = 0.1
     masscut_low_host = 11.15
@@ -241,6 +241,10 @@ for z in [0.4]:
     for gal in cat_massive_z_slice:
         # setting binning scheme
         r200 = Ms_to_r200(gal['MASS_MED'])
+        if r200 > 2000:  # central gals which has no companion
+            isolated_counts -= 1
+            continue
+
         bin_edges = 10 ** np.linspace(-1.9, 0, num=bin_number + 1)
         areas = np.array([])
         for i in range(len(bin_edges[:-1])):
@@ -314,6 +318,7 @@ for z in [0.4]:
 
         count_binned = np.histogram(radius_list, weights=np.array(sfq_weights), bins=bin_edges*r200)[0]
         sat_counts = np.array(count_binned, dtype='f8')
+
         R_m, R_u = correct_for_masked_area(gal['RA'], gal['DEC'])
         R_m_stack += R_m
         R_u_stack += R_u
@@ -344,7 +349,7 @@ for z in [0.4]:
     # aggregate results
     radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
     radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) /areas
-    print(radial_dist_norm)
+
     if mode == 'count':
         err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
     else:

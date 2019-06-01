@@ -30,7 +30,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, m_cen):
 
         num_before_success += 1
         if num_before_success > 30:
-            return 0,0,0,flag_bkg
+            return 0, 0, 0, flag_bkg
 
     # "neighbors" selection
     cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 0.7 / dis / np.pi * 180]
