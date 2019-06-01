@@ -20,7 +20,6 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mode='count'):
     counts_gals_rand = 0
     num_before_success = 0
     coord_rand_list = []
-
     while n < num_p:  # get several blank pointing's to estimate background
         id_rand = int(random() * len(cat_random_copy))
         ra_rand = cat_random_copy[id_rand]['RA']
@@ -160,25 +159,38 @@ def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
     errors = (n_comp/n_central)*np.sqrt((sigma_n_comp/n_comp)**2+(sigma_n_central/n_central)**2)
     return errors
 
+
 # ################# START #####################
 cat_name = sys.argv[1]  # COSMOS_deep COSMOS_uddd ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 mode = sys.argv[2]  # 'count' or 'mass'
-z_keyname = 'zKDEPeak'
-mass_keyname = 'MASS_MED'
-masscut_low = 9.5
-masscut_high = 13.0
-isolation_factor = 1
-path = 'conformity_sfProb_2_8/'
-csfq = 'all'  # csf, cq, all
-ssfq = sys.argv[3]  # ssf, sq, all
-# ssfr_cut = -10.5
-sfprob_cut_low = 0.2
-sfprob_cut_high = 0.8
 
 # run settings
 split_central_mass = False
-all_z = False
+all_z = True
 correct_completeness = True
+save_results = True
+
+z_bins = [0.6] if all_z else [0.4, 0.6, 0.8]
+path = 'total_sample_evo_masscut/'
+csfq = 'all'  # csf, cq, allra
+ssfq = sys.argv[3]  # ssf, sq, all
+masscut_low = 9.5
+masscut_high = 13.0
+masscut_low_host = 11.16
+masscut_high_host = 13.0
+isolation_factor = 1
+# ssfr_cut = -10.5
+sfprob_cut_low = 0.5
+sfprob_cut_high = 0.5
+z_keyname = 'zKDEPeak'
+mass_keyname = 'MASS_MED'
+
+if path[-1] != '/':
+    raise NameError('path is not a directory!')
+elif save_results:
+    print('will save results to ' + path)
+else:
+    print('will NOT save results!')
 
 # setting binning scheme
 bin_number = 14
@@ -192,7 +204,7 @@ print('start reading catalogs', end='\r ')
 cat = Table(fits.getdata('s16a_' + cat_name + '_masterCat.fits'))
 cat = cat[cat[z_keyname] < 1]
 cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
-cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
+cat_gal = cat_gal[cat_gal[mass_keyname] > masscut_low]
 
 # read-in random point catalog
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
@@ -202,52 +214,38 @@ except KeyError:
     cat_random = cat_random[cat_random['inside_uS'] == True]
 cat_random_nomask = np.copy(cat_random)
 cat_random = cat_random[cat_random['MASK'] == False]
+cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))   # to store position of selected random apertures
 
-# to store position of selected random apertures
-cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))
-
-############# main loop ################
-
-for z in [0.4, 0.6, 0.8]:
+# ############ main loop ################
+for z in z_bins:
     z = round(z, 1)
-    if all_z == True:
-        z_bin_size = 0.3
-    else:
-        z_bin_size = 0.1
-
-    # mass cut for centrals
-    masscut_low_host = 11.15
-    masscut_high_host = 13.0
+    z_bin_size = 0.3 if all_z else 0.1
 
     print('=============' + str(round(z-z_bin_size, 1)) + '<z<'+str(round(z+z_bin_size, 1))+'================')
     print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host)
-
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
-
     cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.5]
 
-    # initiations
+    # ### initiations ###
     radial_dist = 0  # radial distribution of satellites
     radial_dist_bkg = 0  # radial distribution of background contaminations
     radial_count_dist = 0  # radial number density distribution of satellites (used in mass mode)
-    isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
-    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x,y in cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
-    massive_count = 0
-    bkg_count = 0
-    bin_centers_stack = 0
-    companion_count_stack = 0
+    massive_count = 0; bkg_count = 0
+    bin_centers_stack = 0; companion_count_stack = 0
     n_sat = []  # number of satellites per central
     n_bkg = []  # number of bkg contamination per central
-
     R_m_stack = np.ones(bin_number) * 1e-6  # number of random points (masked) in each bin
     R_u_stack = np.ones(bin_number) * 1e-6  # number of random points (unmasked) in each bin
     R_m_stack_bkg = np.ones(bin_number) * 1e-6  # number of random points (masked, bkg apertures) in each bin
     R_u_stack_bkg = np.ones(bin_number) * 1e-6  # number of random points (unmasked, bkg apertures) in each bin
 
     # loop for all massive galaxies (potential central galaxy candidate)
+    isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
+    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x, y in
+                                                                cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
     for gal in cat_massive_z_slice:
         massive_count += 1
         print('Progress:' + str(massive_count) + '/' + str(len(cat_massive_z_slice)), end='\r')
@@ -278,7 +276,11 @@ for z in [0.4, 0.6, 0.8]:
             continue
 
         # add to the central catalog
-        isolated_cat.add_row(gal)
+        if masscut_low_host == 11.15:  # if constant mass cut
+            isolated_cat.add_row(gal)
+        elif gal['MASS_MED'] < 11.22 - 0.16 * gal['zKDEPeak']:  # if set evolving masscut, apply additional mass cut
+            isolated_counts -= 1
+            continue
 
         # cut on central SF/Q
         if csfq == 'csf' and gal['sfProb'] < sfprob_cut_high:
@@ -294,7 +296,8 @@ for z in [0.4, 0.6, 0.8]:
         mass_neighbors = cat_neighbors[mass_keyname]
         ssfr_neighbors = cat_neighbors['SSFR_BEST']
         if len(cat_neighbors) == 0:
-            isolated_cat.remove_row(-1)
+            if masscut_low_host == 11.15:
+                isolated_cat.remove_row(-1)
             continue  # central gals which has no satellite
 
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
@@ -314,7 +317,7 @@ for z in [0.4, 0.6, 0.8]:
         bin_centers_stack += bin_centers * len(radius_list)
         companion_count_stack += len(radius_list)
 
-        ### Core Function: statistics ###
+        # ## Core Function: statistics ## #
         if ssfq == 'all':
             sfq_weights = np.ones(len(radius_list))
         elif ssfq == 'ssf':
@@ -348,14 +351,14 @@ for z in [0.4, 0.6, 0.8]:
         # keep record of how many satellites a central has
         n_sat.append(sum(sat_counts))
 
-    ########## Aggregation of Results ##################
+    # ######### Aggregation of Results ##################
     # output central catalog
     if csfq == 'all' and ssfq == 'all':
         n_sat_col = Column(data=n_sat, name='n_sat', dtype='i4')
         n_bkg_col = Column(data=np.ones(len(n_sat))*sum(radial_dist_bkg)/float(isolated_counts), name='n_bkg', dtype='i4')
-
-        isolated_cat.add_columns([n_sat_col, n_bkg_col])
-        isolated_cat.write('massive_gal_positions/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+str(z)+'.positions.fits', overwrite=True)
+        if masscut_low_host == 11.15:
+            isolated_cat.add_columns([n_sat_col, n_bkg_col])
+            isolated_cat.write('massive_gal_positions/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+str(z)+'.positions.fits', overwrite=True)
 
     # detection completeness correction
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
@@ -386,12 +389,13 @@ for z in [0.4, 0.6, 0.8]:
     # output
     filename = path + str(mode) + cat_name + prefix + '_'+ str(masscut_low) + '_' + str(csfq) + '_' \
                + str(ssfq) + '_' + z_output + '.txt'
-    np.save(path + prefix + 'bin_edges', bin_edges)
-    np.save(path + prefix + 'bin_centers', bin_centers_stack / companion_count_stack)
-    if sum(R_u_stack) < 1:
-        np.savetxt(filename, result)
-        print('No massive galaxy with desired satellites!')
-    else:
-        np.savetxt(filename, result)
+    if save_results:
+        np.save(path + prefix + 'bin_edges', bin_edges)
+        np.save(path + prefix + 'bin_centers', bin_centers_stack / companion_count_stack)
+        if sum(R_u_stack) < 1:
+            np.savetxt(filename, result)
+            print('No massive galaxy with desired satellites!')
+        else:
+            np.savetxt(filename, result)
 
 # cat_random_points.write(cat_name+'_random_bkg_positions.fits', overwrite=True)
