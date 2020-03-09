@@ -11,7 +11,26 @@ from sklearn.neighbors import KDTree
 from plot_bkg import plot_bkg
 
 
-def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, mode='count'):
+def check_edge(ra_rand, dec_rand, dis):
+
+    cat_random_cut = cat_random_copy[abs(cat_random_copy['RA'] - ra_rand) < 0.7 / dis / np.pi * 180]
+    cat_random_cut = cat_random_cut[abs(cat_random_cut['DEC'] - dec_rand) < 0.7 / dis / np.pi * 180]
+
+    try:
+        ra_ratio = len(cat_random_cut[cat_random_cut['RA'] < ra_rand])/len(cat_random_cut[cat_random_cut['RA'] > ra_rand])
+        dec_ratio = len(cat_random_cut[cat_random_cut['DEC'] < dec_rand])/len(cat_random_cut[cat_random_cut['DEC'] > dec_rand])
+    except (ValueError, ZeroDivisionError):
+        return True
+
+    if ra_ratio > 1/0.75 or ra_ratio < 0.75:
+        return True
+    elif dec_ratio > 1/0.75 or dec_ratio < 0.75:
+        return True
+    else:
+        return False
+
+
+def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode='count'):
     # __init__
     global R_m_stack_bkg, R_u_stack_bkg, z
 
@@ -27,18 +46,20 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, mode='coun
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
 
         num_before_success += 1
-        if num_before_success > 10:
+        if num_before_success > 100:
             flag_bkg = 1
             break
 
         if sep2d.degree > 1.4 / dis / np.pi * 180:  # make sure the random pointing is away from any central galaxy (blank)
 
-            coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
+            if check_edge(ra_rand, dec_rand, dis):
+                continue
 
-            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 0.7 / dis / np.pi * 180]
-            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 0.7 / dis / np.pi * 180]
+            coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
+            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 7.0 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 7.0 / dis / np.pi * 180]
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
-            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7ra / dis / np.pi * 180]
 
             # make some cuts
             if isinstance(masscut_low, float):
@@ -50,7 +71,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, mode='coun
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < masscut_high]
             elif isinstance(masscut_high, str):
                 cat_neighbors_rand = cat_neighbors_rand[
-                    cat_neighbors_rand[mass_keyname] < gal['MASS_MED'] + np.log10(eval(masscut_high))]
+                    cat_neighbors_rand[mass_keyname] < gal[mass_keyname] + np.log10(eval(masscut_high))]
 
             if ssfq == 'all' and save_catalogs:
                 cat_neighbors_rand.write('background_catalogs_45_newbkg_newz/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(
@@ -92,8 +113,6 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, mode='coun
             coord_rand_list.append(coord_rand)
             n = n + 1
 
-    # if flag_bkg == 0:
-    #     print(counts_gals_rand,coord_rand_list)
     return coord_rand_list, counts_gals_rand, flag_bkg
 
 
@@ -101,7 +120,7 @@ def cut_random_cat(cat_rand, coord_list):
     # cut random point catalog to avoid overlapping
     for coord in coord_list:
         coord_rand_list = SkyCoord(cat_rand['RA'] * u.deg, cat_rand['DEC'] * u.deg)
-        cat_rand = cat_rand[coord_rand_list.separation(coord).degree > 1.4 / dis / np.pi * 180]
+        cat_rand = cat_rand[coord_rand_list.separation(coord).degree > 0.7 / dis / np.pi * 180]
     add_to_random_points(coord_list)
     return cat_rand
 
@@ -118,13 +137,13 @@ def correct_for_masked_area(ra, dec):
     if not correct_masked:
         return np.ones(bin_number), np.ones(bin_number)
     else:
-        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 0.7 / dis / np.pi * 180]
-        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 1.4 / dis / np.pi * 180]
+        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 1.4 / dis / np.pi * 180]
         cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg).separation
                             (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 0.7 / dis / np.pi * 180]
-        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 1.4 / dis / np.pi * 180]
+        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 1.4 / dis / np.pi * 180]
         cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                         (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
@@ -154,12 +173,12 @@ def spatial_comp(z, masscut_low, masscut_high, ssfq):
         path_curve = '/Users/lejay/research/massive_gals/completeness_curve/curves_graham/'
         try:
             comp_bootstrap = np.genfromtxt(
-                path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(masscut_low) + '_' + str(masscut_high) + '_'
+                path_curve + 'comp_bootstrap_all_' + ssfq + '_'+str(masscut_low)+'_' + str(masscut_high) + '_'
                 + str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
         except IOError:
             comp_bootstrap = np.genfromtxt(
                 path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(round(z - 0.1, 1)) + '_'
-                + str(round(z + 0.1, 1)) + '_' + str(masscut_low) + '_' + str(masscut_high) + '.txt')
+                + str(round(z + 0.1, 1)) + '_'+str(masscut_low)+'_' + str(masscut_high) + '.txt')
 
         spatial_weight = 1. / np.nanmedian(comp_bootstrap, axis=0)
         spatial_weight_err = np.nanstd(comp_bootstrap, axis=0)/np.nanmedian(comp_bootstrap, axis=0)**2
@@ -217,26 +236,16 @@ evo_masscut = False
 sat_z_cut = 4.5
 
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8]
-path = 'total_sample_new_cat_1135/'
 csfq = 'all'  # csf, cq, all
 ssfq = sys.argv[3]  # ssf, sq, all
 masscut_low = 9.5
 masscut_high = 13.0
-masscut_low_host = 11.0 if evo_masscut else 11.35
+masscut_low_host = 11.0 if evo_masscut else 11.15
 masscut_high_host = 13.0
 isolation_factor = 1
 # ssfr_cut = -10.5
 sfprob_cut_low = 0.5
 sfprob_cut_high = 0.5
-z_keyname = 'ZPHOT'
-mass_keyname = 'MASS_MED'
-
-if path[-1] != '/' and save_results:
-    raise NameError('path is not a directory!')
-elif save_results:
-    print('will save results to ' + path)
-else:
-    print('will NOT save results!')
 
 # setting binning scheme
 bin_number = 14
@@ -246,13 +255,56 @@ for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-print('start reading catalogs', end='\r ')
-# if cat_name == 'SXDS_uddd':
-#     cat_name = 'SXDS3_uddd'
-cat = Table.read('s16a_' + cat_name + '_masterCat_newz.fits')
-cat = cat[cat[z_keyname] < 1.3]
-cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
+cat_type = 'matched'
+params = 'old'
+path = 'total_sample_matched_cat_0226/'
+
+print('start reading catalogs ...')
+if cat_type == 'old':
+    if cat_name == 'SXDS_uddd':
+        cat_name = 'SXDS3_uddd'
+    cat = Table.read('s16a_' + cat_name + '_masterCat.fits')
+    print('No. of objs:', len(cat))
+    z_keyname = 'zKDEPeak'
+    mass_keyname = 'MASS_MED'
+
+    cat = cat[~np.isnan(cat[z_keyname])]
+    cat = cat[cat[z_keyname] < 1.3]
+    cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
+else:
+    cat = Table.read('s16a_' + cat_name + '_masterCat_newz3.fits')
+    cat = cat[cat['matched']==True]
+    print('No. of objs:', len(cat))
+    if params == 'new':
+        z_keyname = 'Z_BEST_BC03'
+        mass_keyname = 'MASS_MED_new'
+        cat = cat[~np.isnan(cat[z_keyname])]
+        cat = cat[cat[z_keyname] < 1.3]
+        cat_gal = cat[cat['CLASS'] < 10]
+    else:
+        z_keyname = 'zKDEPeak'
+        mass_keyname = 'MASS_MED'
+        cat = cat[~np.isnan(cat[z_keyname])]
+        cat = cat[cat[z_keyname] < 1.3]
+        cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
+
 cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
+
+print(cat_type, params, z_keyname, mass_keyname)
+print('No. of gals (after z<1.3, gal,m>9.0 and inside ):', len(cat_gal))
+if path[-1] != '/' and save_results:
+    raise NameError('path is not a directory!')
+elif save_results:
+    print('will save results to ' + path)
+else:
+    print('will NOT save results!')
+
+
+# remove outliers (TEMPARORY!)
+# z_old = cat_gal['zKDEPeak']
+# z_new = cat_gal['Z_BEST_BC03']
+# outlier_flag = np.logical_and(np.logical_and(z_old > 1.3, z_old < 1.55), np.logical_and(z_new > 0.6, z_new < 0.9))
+# cat_gal = cat_gal[outlier_flag==False]
 
 # read-in random point catalog
 cat_random = Table.read('s16a_' + cat_name + '_random.fits')
@@ -263,7 +315,7 @@ except KeyError:
 cat_random_nomask = np.copy(cat_random)
 cat_random = cat_random[cat_random['MASK'] == False]
 cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))   # to store position of selected random apertures
-if cat_name == 'SXDS3_uddd':
+if cat_type == 'old' and cat_name == 'SXDS3_uddd':
     cat_name = 'SXDS_uddd'
 
 # ############ main loop ################
@@ -275,12 +327,23 @@ for z in z_bins:
     print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host, evo_masscut)
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
 
-     ##  use matched stellar-mass central sample?
+    #------------------
+    ##  use matched stellar-mass central sample?
     # cat_iso_cen_saved = Table.read('isolated_'+str(csfq)+'_central_matched_'+str(z)+'.fits')
     # iso_cen_saved_ids = cat_iso_cen_saved['NUMBER']
 
+    ## select centrals that satisfy both old and new selection
+    # cat_massive_gal = cat_gal[np.logical_and(cat_gal['MASS_MED'] > 11.15, cat_gal['MASS_MED'] < 13.0)]
+    # cat_massive_gal = cat_massive_gal[np.logical_and(cat_massive_gal['MASS_MED_new'] > 11.35, cat_massive_gal['MASS_MED_new'] < 13.0)]
+    # cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['zKDEPeak'] - z) < z_bin_size]
+    # cat_massive_z_slice = cat_massive_z_slice[abs(cat_massive_z_slice['Z_BEST_BC03'] - z) < z_bin_size]
+    # np.save('massive_list_'+params, np.array(cat_massive_z_slice['NUMBER']))
+
+    # normal selection of central galaxies
     cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
     cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
+
+    #---------------------
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.4]
 
@@ -302,6 +365,7 @@ for z in z_bins:
     isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
     isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x, y in
                                                                 cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
+
     for gal in cat_massive_z_slice:
         massive_count += 1
 
@@ -313,6 +377,9 @@ for z in z_bins:
         print('Progress:' + str(massive_count) + '/' + str(len(cat_massive_z_slice)), end='\r')
         dis = WMAP9.angular_diameter_distance(gal[z_keyname]).value
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
+        if check_edge(gal['RA'], gal['DEC'], dis):
+            isolated_counts -= 1
+            continue
 
         # prepare neighbors catalog
         cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice[z_keyname] - gal[z_keyname]) < sat_z_cut * 0.044 * (1 + gal[z_keyname])]
@@ -340,8 +407,8 @@ for z in z_bins:
         #######################################################
 
         # (initial square spatial cut)
-        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 0.7 / dis / np.pi * 180]
-        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 0.7 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 7.0 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 7.0 / dis / np.pi * 180]
 
         # circular aperture cut, skip centrals that have no satellites
         if len(cat_neighbors) == 0:
@@ -349,8 +416,9 @@ for z in z_bins:
             isolated_counts -= 1
             continue
         else:
-            ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 0.7 / dis / np.pi * 180)
+            ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 1.4 / dis / np.pi * 180)
             cat_neighbors = cat_neighbors[ind[0]]
+
             cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]  # exclude central galaxy from satellite catalog
             if len(cat_neighbors) == 0:
                 print('No Satellite for', gal['NUMBER'])
@@ -365,7 +433,7 @@ for z in z_bins:
         # add to the central catalog
         if not evo_masscut:  # if constant mass cut
             isolated_cat.add_row(gal)
-        elif gal['MASS_MED'] < 11.23 - 0.16 * gal['zKDEPeak']:  # if set evolving masscut, apply additional mass cut
+        elif gal[mass_keyname] < 11.23 - 0.16 * gal[z_keyname]:  # if set evolving masscut, apply additional mass cut
             isolated_counts -= 1
             continue
         else:
@@ -383,12 +451,12 @@ for z in z_bins:
         if isinstance(masscut_low, float):  # fixed cut
             cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > masscut_low]
         elif isinstance(masscut_low, str):  # relative cut
-            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > gal['MASS_MED']+np.log10(eval(masscut_low))]
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > gal[mass_keyname]+np.log10(eval(masscut_low))]
 
         if isinstance(masscut_high, float):  # fixed cut
             cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < masscut_high]
         elif isinstance(masscut_high, str):  # relative cut
-            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < gal['MASS_MED']+np.log10(eval(masscut_high))]
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < gal[mass_keyname]+np.log10(eval(masscut_high))]
 
         mass_neighbors = cat_neighbors[mass_keyname]
         if len(cat_neighbors) == 0:
@@ -438,7 +506,11 @@ for z in z_bins:
 
             # detection completeness correction
             spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, ssfq)
-            coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname], mode=mode)
+            coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname], dis,mode=mode)
+            # print(sat_counts)
+            # print(sat_counts_bkg)
+            # print('.......')
+
             radial_dist += sat_counts * spatial_weight
             if flag_bkg == 0:
                 radial_dist_bkg += sat_counts_bkg * np.average(spatial_weight[-5:])
@@ -448,7 +520,7 @@ for z in z_bins:
             binned_data = stats.binned_statistic(radius_list, 10 ** (mass_neighbors - 10), statistic='sum', bins=bin_edges)
             mass_binned = binned_data[0]
             sat_masses = np.array(mass_binned, dtype='f8')
-            coord_random_list, sat_masses_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname],  mode=mode)
+            coord_random_list, sat_masses_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname], dis, mode=mode)
             radial_dist += sat_masses
             radial_count_dist += sat_counts
             if flag_bkg == 0:
@@ -484,13 +556,13 @@ for z in z_bins:
     result = np.append([n_central], [n_count, n_err])
 
     # ## TEMPORARY
-    # n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    # n_bkg_err = cal_error2(radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    # result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
-    # result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
+    n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
+    n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
+    result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
+    result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
 
     # output result to file
-    print(isolated_counts2)
+    print('iso:',isolated_counts2)
     print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
     print('Finished bkgs: '+str(bkg_count))
 
@@ -500,10 +572,10 @@ for z in z_bins:
     # output
     filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
                + str(ssfq) + '_' + z_output +'.txt'
-    # filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
-    #            + str(ssfq) + '_' + z_output + '.txt'
-    # filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
-    #            + str(ssfq) + '_' + z_output + '.txt'
+    filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output + '.txt'
+    filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output + '.txt'
 
     if save_results:
         np.save(path + 'bin_edges', bin_edges)
@@ -513,8 +585,8 @@ for z in z_bins:
             print('No massive galaxy with desired satellites!')
         else:
             np.savetxt(filename, result)
-            # np.savetxt(filename_sat, result_sat)
-            # np.savetxt(filename_bkg, result_bkg)
+            np.savetxt(filename_sat, result_sat)
+            np.savetxt(filename_bkg, result_bkg)
 
     cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
     # plot_bkg(cat_name, z)
