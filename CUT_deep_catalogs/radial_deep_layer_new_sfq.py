@@ -56,10 +56,10 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode=
                 continue
 
             coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
-            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 7.0 / dis / np.pi * 180]
-            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 7.0 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 5.0 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 5.0 / dis / np.pi * 180]
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
-            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7ra / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7 / dis / np.pi * 180]
 
             # make some cuts
             if isinstance(masscut_low, float):
@@ -137,13 +137,13 @@ def correct_for_masked_area(ra, dec):
     if not correct_masked:
         return np.ones(bin_number), np.ones(bin_number)
     else:
-        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 1.4 / dis / np.pi * 180]
-        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 1.4 / dis / np.pi * 180]
+        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 0.7 / dis / np.pi * 180]
+        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
         cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg).separation
                             (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 1.4 / dis / np.pi * 180]
-        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 1.4 / dis / np.pi * 180]
+        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 0.7 / dis / np.pi * 180]
+        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
         cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                         (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
@@ -255,9 +255,9 @@ for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-cat_type = 'matched'
+cat_type = 'old'
 params = 'old'
-path = 'total_sample_matched_cat_0226/'
+path = 'total_sample_old_cat_test_0309/'
 
 print('start reading catalogs ...')
 if cat_type == 'old':
@@ -407,8 +407,8 @@ for z in z_bins:
         #######################################################
 
         # (initial square spatial cut)
-        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 7.0 / dis / np.pi * 180]
-        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 7.0 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 5.0 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 5.0 / dis / np.pi * 180]
 
         # circular aperture cut, skip centrals that have no satellites
         if len(cat_neighbors) == 0:
@@ -416,8 +416,8 @@ for z in z_bins:
             isolated_counts -= 1
             continue
         else:
-            ind = KDTree(np.array(cat_neighbors['RA', 'DEC']).tolist()).query_radius([(gal['RA'], gal['DEC'])], 1.4 / dis / np.pi * 180)
-            cat_neighbors = cat_neighbors[ind[0]]
+            coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
+            cat_neighbors = cat_neighbors[coord_neighbors.separation(coord_gal).degree < 0.7 / dis / np.pi * 180]
 
             cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]  # exclude central galaxy from satellite catalog
             if len(cat_neighbors) == 0:
