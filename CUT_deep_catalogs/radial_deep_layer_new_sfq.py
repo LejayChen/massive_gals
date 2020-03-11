@@ -137,13 +137,13 @@ def correct_for_masked_area(ra, dec):
     if not correct_masked:
         return np.ones(bin_number), np.ones(bin_number)
     else:
-        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 0.7 / dis / np.pi * 180]
-        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 2.5 / dis / np.pi * 180]
+        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 2.5 / dis / np.pi * 180]
         cat_nomask = cat_nomask[SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg).separation
                             (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
-        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 0.7 / dis / np.pi * 180]
-        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 0.7 / dis / np.pi * 180]
+        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 2.5 / dis / np.pi * 180]
+        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 2.5 / dis / np.pi * 180]
         cat_mask = cat_mask[SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation
                         (SkyCoord(ra * u.deg, dec * u.deg)).degree < 0.7 / dis / np.pi * 180]
 
@@ -230,7 +230,7 @@ split_central_mass = False
 all_z = False
 correct_completeness = True
 correct_masked = True
-save_results = True
+save_results = False
 save_catalogs = False
 evo_masscut = False
 sat_z_cut = 4.5
@@ -255,8 +255,9 @@ for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-cat_type = 'old'
+cat_type = 'matched'
 params = 'old'
+massive_selection = 'new'
 path = 'total_sample_old_cat_test_0309/'
 
 print('start reading catalogs ...')
@@ -290,7 +291,7 @@ else:
 
 cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
 
-print(cat_type, params, z_keyname, mass_keyname)
+print('cat_type',cat_type, 'param_tyep',params, z_keyname, mass_keyname,'massive_selection',massive_selection)
 print('No. of gals (after z<1.3, gal,m>9.0 and inside ):', len(cat_gal))
 if path[-1] != '/' and save_results:
     raise NameError('path is not a directory!')
@@ -333,21 +334,37 @@ for z in z_bins:
     # iso_cen_saved_ids = cat_iso_cen_saved['NUMBER']
 
     ## select centrals that satisfy both old and new selection
-    # cat_massive_gal = cat_gal[np.logical_and(cat_gal['MASS_MED'] > 11.15, cat_gal['MASS_MED'] < 13.0)]
-    # cat_massive_gal = cat_massive_gal[np.logical_and(cat_massive_gal['MASS_MED_new'] > 11.35, cat_massive_gal['MASS_MED_new'] < 13.0)]
-    # cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal['zKDEPeak'] - z) < z_bin_size]
-    # cat_massive_z_slice = cat_massive_z_slice[abs(cat_massive_z_slice['Z_BEST_BC03'] - z) < z_bin_size]
-    # np.save('massive_list_'+params, np.array(cat_massive_z_slice['NUMBER']))
+    if massive_selection == 'normal':
+        cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
+        cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
+    else:
+        cat_massive_z_slice = Table(names=cat_gal.colnames, dtype=[str(y[0]) for x, y in cat_gal.dtype.fields.items()])
 
-    # normal selection of central galaxies
-    cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
-    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
+        cat_massive_gal_old = cat_gal[np.logical_and(cat_gal['MASS_MED'] > 11.15, cat_gal['MASS_MED'] < 13.0)]
+        cat_massive_z_slice_old = cat_massive_gal_old[abs(cat_massive_gal_old['zKDEPeak'] - z) < z_bin_size]
+        cat_massive_gal_new = cat_gal[np.logical_and(cat_gal['MASS_MED_new'] > 11.35, cat_gal['MASS_MED_new'] < 13.0)]
+        cat_massive_z_slice_new = cat_massive_gal_new[abs(cat_massive_gal_new['Z_BEST_BC03'] - z) < z_bin_size]
+        if massive_selection == 'both':
+            for gal in cat_massive_z_slice_old:
+                if gal['NUMBER'] in cat_massive_z_slice_new['NUMBER']:
+                    cat_massive_z_slice.add_row(gal)
+        elif massive_selection == 'new':
+            for gal in cat_massive_z_slice_new:
+                if gal['NUMBER'] not in cat_massive_z_slice_old['NUMBER']:
+                    cat_massive_z_slice.add_row(gal)
+        elif massive_selection == 'old':
+            for gal in cat_massive_z_slice_old:
+                if gal['NUMBER'] not in cat_massive_z_slice_new['NUMBER']:
+                    cat_massive_z_slice.add_row(gal)
+        else:
+            raise NameError('not acceptable massive_selection')
 
     #---------------------
+    print('No. of massive gals:', len(cat_massive_z_slice))
     coord_massive_gal = SkyCoord(cat_massive_z_slice['RA'] * u.deg, cat_massive_z_slice['DEC'] * u.deg)
     cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 0.4]
 
-    # ### initiations ### #
+    # ### variable initiations ### #
     radial_dist = 0  # radial distribution of satellites
     radial_dist_bkg = 0  # radial distribution of background contamination
     radial_count_dist = 0  # radial number density distribution of satellites (used in mass mode)
@@ -363,9 +380,7 @@ for z in z_bins:
     # loop for all massive galaxies (potential central galaxy candidate)
     isolated_counts2 = 0
     isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
-    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x, y in
-                                                                cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
-
+    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x, y in cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
     for gal in cat_massive_z_slice:
         massive_count += 1
 
@@ -406,9 +421,9 @@ for z in z_bins:
         #     continue
         #######################################################
 
-        # (initial square spatial cut)
-        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 5.0 / dis / np.pi * 180]
-        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 5.0 / dis / np.pi * 180]
+        # (initial rectengular spatial cut)
+        cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 2.5 / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors[abs(cat_neighbors['DEC'] - gal['DEC']) < 2.5 / dis / np.pi * 180]
 
         # circular aperture cut, skip centrals that have no satellites
         if len(cat_neighbors) == 0:
