@@ -5,9 +5,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 from astropy.cosmology import WMAP9
 from astropy.table import *
-from astropy.io import fits
 from scipy import stats
-from sklearn.neighbors import KDTree
 from plot_bkg import plot_bkg
 
 
@@ -56,8 +54,8 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode=
                 continue
 
             coord_rand = SkyCoord(ra_rand * u.deg, dec_rand * u.deg)
-            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 5.0 / dis / np.pi * 180]
-            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 5.0 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < 2.5 / dis / np.pi * 180]
+            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < 2.5 / dis / np.pi * 180]
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < 0.7 / dis / np.pi * 180]
 
@@ -232,6 +230,7 @@ correct_completeness = True
 correct_masked = True
 save_results = False
 save_catalogs = False
+save_massive_catalogs = True
 evo_masscut = False
 sat_z_cut = 4.5
 
@@ -257,8 +256,9 @@ for i in range(len(bin_edges[:-1])):
 # read in data catalog
 cat_type = 'matched'
 params = 'old'
-massive_selection = 'new'
-path = 'total_sample_old_cat_test_0309/'
+massive_selection = 'both' # old, new, both or normal
+# path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params/'
+path = 'total_sample_matched_cat_new_params_0312/'
 
 print('start reading catalogs ...')
 if cat_type == 'old':
@@ -291,7 +291,7 @@ else:
 
 cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
 
-print('cat_type',cat_type, 'param_tyep',params, z_keyname, mass_keyname,'massive_selection',massive_selection)
+print('cat_type', cat_type, ', param_type', params, z_keyname, mass_keyname,', massive_selection',massive_selection)
 print('No. of gals (after z<1.3, gal,m>9.0 and inside ):', len(cat_gal))
 if path[-1] != '/' and save_results:
     raise NameError('path is not a directory!')
@@ -380,7 +380,7 @@ for z in z_bins:
     # loop for all massive galaxies (potential central galaxy candidate)
     isolated_counts2 = 0
     isolated_counts = len(cat_massive_z_slice)  # counts of isolated massive galaxies (supposedly centrals)
-    isolated_cat = Table(names=cat_massive_gal.colnames, dtype=[str(y[0]) for x, y in cat_massive_gal.dtype.fields.items()])  # catalog of isolated central galaxies
+    isolated_cat = Table(names=cat_gal.colnames, dtype=[str(y[0]) for x, y in cat_gal.dtype.fields.items()])  # catalog of isolated central galaxies
     for gal in cat_massive_z_slice:
         massive_count += 1
 
@@ -552,56 +552,56 @@ for z in z_bins:
     if csfq == 'all' and ssfq == 'all':
         n_sat_col = Column(data=n_sat, name='n_sat', dtype='i4')
         n_bkg_col = Column(data=np.ones(len(n_sat))*sum(radial_dist_bkg)/float(isolated_counts), name='n_bkg', dtype='i4')
-        if masscut_low_host == 11.15 and save_catalogs:
+        if save_massive_catalogs:
             isolated_cat.add_columns([n_sat_col, n_bkg_col])  # n_sat and n_bkg are not corrected
-            isolated_cat.write('massive_gal_positions_45_newz/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+z_output+'.positions.fits', overwrite=True)
+            isolated_cat.write('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+z_output+'_params_'+params+'.positions.fits', overwrite=True)
 
     # normalize number counts to by counting area and number of centrals
-    radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
-    radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) / areas
-
-    # error estimation (assuming Poisson errors)
-    spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
-    if mode == 'count':
-        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    else:
-        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) \
-              * (radial_dist / radial_count_dist) / areas
-    n_central, n_count, n_err = isolated_counts, radial_dist_norm - radial_dist_bkg_norm, err
-    result = np.append([n_central], [n_count, n_err])
-
-    # ## TEMPORARY
-    n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
-    result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
-    result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
-
-    # output result to file
-    print('iso:',isolated_counts2)
-    print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
-    print('Finished bkgs: '+str(bkg_count))
-
-    # output file naming options
-    prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
-
-    # output
-    filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output +'.txt'
-    filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output + '.txt'
-    filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output + '.txt'
-
-    if save_results:
-        np.save(path + 'bin_edges', bin_edges)
-        np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
-        if sum(R_u_stack) < 1 and correct_masked:
-            np.savetxt(filename, result)
-            print('No massive galaxy with desired satellites!')
-        else:
-            np.savetxt(filename, result)
-            np.savetxt(filename_sat, result_sat)
-            np.savetxt(filename_bkg, result_bkg)
-
-    cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
+    # radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
+    # radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) / areas
+    #
+    # # error estimation (assuming Poisson errors)
+    # spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
+    # if mode == 'count':
+    #     err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
+    # else:
+    #     err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) \
+    #           * (radial_dist / radial_count_dist) / areas
+    # n_central, n_count, n_err = isolated_counts, radial_dist_norm - radial_dist_bkg_norm, err
+    # result = np.append([n_central], [n_count, n_err])
+    #
+    # # ## TEMPORARY
+    # n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
+    # n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
+    # result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
+    # result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
+    #
+    # # output result to file
+    # print('iso:',isolated_counts2)
+    # print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
+    # print('Finished bkgs: '+str(bkg_count))
+    #
+    # # output file naming options
+    # prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
+    #
+    # # output
+    # filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
+    #            + str(ssfq) + '_' + z_output +'.txt'
+    # filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
+    #            + str(ssfq) + '_' + z_output + '.txt'
+    # filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
+    #            + str(ssfq) + '_' + z_output + '.txt'
+    #
+    # if save_results:
+    #     np.save(path + 'bin_edges', bin_edges)
+    #     np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
+    #     if sum(R_u_stack) < 1 and correct_masked:
+    #         np.savetxt(filename, result)
+    #         print('No massive galaxy with desired satellites!')
+    #     else:
+    #         np.savetxt(filename, result)
+    #         np.savetxt(filename_sat, result_sat)
+    #         np.savetxt(filename_bkg, result_bkg)
+    #
+    # cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
     # plot_bkg(cat_name, z)
