@@ -256,7 +256,7 @@ for i in range(len(bin_edges[:-1])):
 # read in data catalog
 cat_type = 'matched'
 params = 'old'
-massive_selection = 'both' # old, new, both or normal
+massive_selection = 'both-central' # old, new, both or normal
 # path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params/'
 path = 'total_sample_matched_cat_new_params_0312/'
 
@@ -356,8 +356,14 @@ for z in z_bins:
             for gal in cat_massive_z_slice_old:
                 if gal['NUMBER'] not in cat_massive_z_slice_new['NUMBER']:
                     cat_massive_z_slice.add_row(gal)
+        elif massive_selection == 'both-central':
+            cat_massive_both_central = Table.read('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(z)+'_both_central.positions.fits')
+            for gal in cat_massive_z_slice_old:
+                if gal['NUMBER'] in cat_massive_both_central['NUMBER']:
+                    cat_massive_z_slice.add_row(gal)
         else:
             raise NameError('not acceptable massive_selection')
+        print(len(cat_massive_z_slice))
 
     #---------------------
     print('No. of massive gals:', len(cat_massive_z_slice))
@@ -557,51 +563,51 @@ for z in z_bins:
             isolated_cat.write('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+z_output+'_params_'+params+'.positions.fits', overwrite=True)
 
     # normalize number counts to by counting area and number of centrals
-    # radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
-    # radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) / areas
-    #
-    # # error estimation (assuming Poisson errors)
-    # spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
-    # if mode == 'count':
-    #     err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    # else:
-    #     err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) \
-    #           * (radial_dist / radial_count_dist) / areas
-    # n_central, n_count, n_err = isolated_counts, radial_dist_norm - radial_dist_bkg_norm, err
-    # result = np.append([n_central], [n_count, n_err])
-    #
-    # # ## TEMPORARY
-    # n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
-    # n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
-    # result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
-    # result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
-    #
-    # # output result to file
-    # print('iso:',isolated_counts2)
-    # print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
-    # print('Finished bkgs: '+str(bkg_count))
-    #
-    # # output file naming options
-    # prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
-    #
-    # # output
-    # filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
-    #            + str(ssfq) + '_' + z_output +'.txt'
-    # filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
-    #            + str(ssfq) + '_' + z_output + '.txt'
-    # filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
-    #            + str(ssfq) + '_' + z_output + '.txt'
-    #
-    # if save_results:
-    #     np.save(path + 'bin_edges', bin_edges)
-    #     np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
-    #     if sum(R_u_stack) < 1 and correct_masked:
-    #         np.savetxt(filename, result)
-    #         print('No massive galaxy with desired satellites!')
-    #     else:
-    #         np.savetxt(filename, result)
-    #         np.savetxt(filename_sat, result_sat)
-    #         np.savetxt(filename_bkg, result_bkg)
-    #
-    # cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
+    radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
+    radial_dist_bkg_norm = radial_dist_bkg * R_u_stack_bkg / R_m_stack_bkg / float(bkg_count) / areas
+
+    # error estimation (assuming Poisson errors)
+    spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
+    if mode == 'count':
+        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) / areas
+    else:
+        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts, spatial_weight, spatial_weight_err) \
+              * (radial_dist / radial_count_dist) / areas
+    n_central, n_count, n_err = isolated_counts, radial_dist_norm - radial_dist_bkg_norm, err
+    result = np.append([n_central], [n_count, n_err])
+
+    # ## TEMPORARY
+    n_sat_err = cal_error2(radial_dist, isolated_counts, spatial_weight, spatial_weight_err) / areas
+    n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
+    result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
+    result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
+
+    # output result to file
+    print('iso:',isolated_counts2)
+    print('Finished gals: '+str(isolated_counts)+'/'+str(len(cat_massive_z_slice)))
+    print('Finished bkgs: '+str(bkg_count))
+
+    # output file naming options
+    prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
+
+    # output
+    filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output +'.txt'
+    filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output + '.txt'
+    filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
+               + str(ssfq) + '_' + z_output + '.txt'
+
+    if save_results:
+        np.save(path + 'bin_edges', bin_edges)
+        np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
+        if sum(R_u_stack) < 1 and correct_masked:
+            np.savetxt(filename, result)
+            print('No massive galaxy with desired satellites!')
+        else:
+            np.savetxt(filename, result)
+            np.savetxt(filename_sat, result_sat)
+            np.savetxt(filename_bkg, result_bkg)
+
+    cat_random_points.write('random_points_'+cat_name+'_'+str(z)+'.fits', overwrite=True)
     # plot_bkg(cat_name, z)
