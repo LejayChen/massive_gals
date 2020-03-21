@@ -1,4 +1,4 @@
-import sys
+import sys, os
 from random import random
 import numpy as np
 import astropy.units as u
@@ -72,9 +72,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode=
                     cat_neighbors_rand[mass_keyname] < gal[mass_keyname] + np.log10(eval(masscut_high))]
 
             if ssfq == 'all' and save_catalogs:
-                cat_neighbors_rand.write('background_catalogs_45_newbkg_newz/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(
-                    round(gal['zKDEPeak'], 2)) +'_' +'.fits', overwrite=True)
-
+                cat_neighbors_rand.write(sat_cat_dir + cat_name + '_' + str(gal['NUMBER']) + '_bkg.fits', overwrite=True)
 
             # exclude bkg apertures that contains galaxies more massive than central
             if len(cat_neighbors_rand) > 0:
@@ -228,9 +226,9 @@ split_central_mass = False
 all_z = False
 correct_completeness = True
 correct_masked = True
-save_results = False
-save_catalogs = False
-save_massive_catalogs = True
+save_results = True
+save_catalogs = True
+save_massive_catalogs = False
 evo_masscut = False
 sat_z_cut = 4.5
 
@@ -254,11 +252,11 @@ for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-cat_type = 'matched'
+cat_type = 'old'
 params = 'old'
-massive_selection = 'both-central' # old, new, both or normal
+massive_selection = 'normal'  # old, new, both or normal
 # path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params/'
-path = 'total_sample_matched_cat_new_params_0312/'
+path = 'total_sample_0321/'
 
 print('start reading catalogs ...')
 if cat_type == 'old':
@@ -323,6 +321,14 @@ if cat_type == 'old' and cat_name == 'SXDS3_uddd':
 for z in z_bins:
     z = round(z, 1)
     z_bin_size = 0.3 if all_z else 0.1
+
+    # prepare directory for satellite catalogs
+    sat_cat_dir = path + cat_name+'_'+str(z*10)+'/'
+    if not os.path.exists(sat_cat_dir):
+        if os.path.exists(path):
+            os.system('mkdir '+sat_cat_dir)
+        else:
+            raise FileNotFoundError('Result path does not exist: '+path)
 
     print('=============' + str(round(z-z_bin_size, 1)) + '<z<'+str(round(z+z_bin_size, 1))+'================')
     print(mode, csfq, ssfq, masscut_low, masscut_high, masscut_low_host, evo_masscut)
@@ -491,8 +497,7 @@ for z in z_bins:
 
         # save satellite catalog (no bkg subtraction)
         if ssfq == 'all' and save_catalogs:
-            cat_neighbors.write('satellite_catalogs_45_newbkg_newz/' + cat_name + '_' + str(gal['NUMBER']) + '_' + str(
-                round(gal['zKDEPeak'], 2)) + '_' + str(round(gal['sfProb'], 2)) + '.fits', overwrite=True)
+            cat_neighbors.write(sat_cat_dir + cat_name + '_' + str(gal['NUMBER']) + '_sat.fits', overwrite=True)
 
         # get mean radius value of companions in each bin and stack
         bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=bin_edges)
@@ -560,7 +565,7 @@ for z in z_bins:
         n_bkg_col = Column(data=np.ones(len(n_sat))*sum(radial_dist_bkg)/float(isolated_counts), name='n_bkg', dtype='i4')
         if save_massive_catalogs:
             isolated_cat.add_columns([n_sat_col, n_bkg_col])  # n_sat and n_bkg are not corrected
-            isolated_cat.write('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+z_output+'_params_'+params+'.positions.fits', overwrite=True)
+            isolated_cat.write('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(masscut_low_host)+'_'+z_output+'_massive_'+massive_selection+'_params_'+params+'.positions.fits', overwrite=True)
 
     # normalize number counts to by counting area and number of centrals
     radial_dist_norm = radial_dist * R_u_stack / R_m_stack / float(isolated_counts) / areas
