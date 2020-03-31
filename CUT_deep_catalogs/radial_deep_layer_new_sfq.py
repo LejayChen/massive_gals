@@ -70,7 +70,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode=
                     cat_neighbors_rand[mass_keyname] < gal[mass_keyname] + np.log10(eval(masscut_high))]
 
             if ssfq == 'all' and save_catalogs:
-                cat_neighbors_rand.write(sat_cat_dir + cat_name + '_' + str(gal['NUMBER']) + '_bkg.fits', overwrite=True)
+                cat_neighbors_rand.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_bkg.fits', overwrite=True)
 
             # exclude bkg apertures that contains galaxies more massive than central
             if len(cat_neighbors_rand) > 0:
@@ -122,7 +122,7 @@ def cut_random_cat(cat_rand, coord_list):
 def add_to_random_points(coord_list):
     # store coord of selected random points just for record
     for coord in coord_list:
-        cat_random_points.add_row([coord.ra.value, coord.dec.value, gal['NUMBER']])
+        cat_random_points.add_row([coord.ra.value, coord.dec.value, gal[id_keyname]])
     return 0
 
 
@@ -160,19 +160,21 @@ def correct_for_masked_area(ra, dec):
             return count_mask, count_nomask
 
 
-def spatial_comp(z, masscut_low, masscut_high, ssfq):
+def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
+    if masscut_low_comp == 9.6:
+        masscut_low_comp = 9.5
     if not correct_completeness:
         return np.ones(bin_number), np.zeros(bin_number)
     else:
         path_curve = '/Users/lejay/research/massive_gals/completeness_curve/curves_graham/'
         try:
             comp_bootstrap = np.genfromtxt(
-                path_curve + 'comp_bootstrap_all_' + ssfq + '_'+str(masscut_low)+'_' + str(masscut_high) + '_'
+                path_curve + 'comp_bootstrap_all_' + ssfq + '_'+str(masscut_low_comp)+'_' + str(masscut_high_comp) + '_'
                 + str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
         except IOError:
             comp_bootstrap = np.genfromtxt(
                 path_curve + 'comp_bootstrap_all_' + ssfq + '_' + str(round(z - 0.1, 1)) + '_'
-                + str(round(z + 0.1, 1)) + '_'+str(masscut_low)+'_' + str(masscut_high) + '.txt')
+                + str(round(z + 0.1, 1)) + '_'+str(masscut_low_comp)+'_' + str(masscut_high_comp) + '.txt')
 
         spatial_weight = 1. / np.nanmedian(comp_bootstrap, axis=0)
         spatial_weight_err = np.nanstd(comp_bootstrap, axis=0)/np.nanmedian(comp_bootstrap, axis=0)**2
@@ -226,7 +228,7 @@ correct_completeness = True
 correct_masked = True
 save_results = True
 save_catalogs = True
-save_massive_catalogs = False
+save_massive_catalogs = True
 evo_masscut = False
 sat_z_cut = 4.5
 
@@ -262,13 +264,14 @@ if cat_type == 'old':
     cat = Table.read('s16a_' + cat_name + '_masterCat.fits')
     z_keyname = 'zKDEPeak'
     mass_keyname = 'MASS_MED'
-
+    id_keyname = 'NUMBER'
     cat = cat[~np.isnan(cat[z_keyname])]
     cat = cat[cat[z_keyname] < 1.3]
     cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
-else:
+elif cat_type == 'matched':
     cat = Table.read('s16a_' + cat_name + '_masterCat_newz3.fits')
     cat = cat[cat['matched']==True]
+    id_keyname = 'NUMBER'
     if params == 'new':
         z_keyname = 'Z_BEST_BC03'
         mass_keyname = 'MASS_MED_new'
@@ -281,6 +284,16 @@ else:
         cat = cat[~np.isnan(cat[z_keyname])]
         cat = cat[cat[z_keyname] < 1.3]
         cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
+elif cat_type == 'new':
+    cat = Table.read('UV_CUT_CLAUDS_HSC_S16A_' + cat_name + '.fits')
+    z_keyname = 'Z_BEST_BC03'
+    mass_keyname = 'MASS_MED'
+    id_keyname = 'ID'
+    cat = cat[~np.isnan(cat[z_keyname])]
+    cat = cat[cat[z_keyname] < 1.3]
+    cat_gal = cat[cat['CLASS'] < 10]
+else:
+    raise ValueError(cat_type+': cat type not acceptable')
 
 cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
 
@@ -330,7 +343,7 @@ for z in z_bins:
 
     # # use matched stellar-mass central sample?
     # cat_iso_cen_saved = Table.read('isolated_'+str(csfq)+'_central_matched_'+str(z)+'.fits')
-    # iso_cen_saved_ids = cat_iso_cen_saved['NUMBER']
+    # iso_cen_saved_ids = cat_iso_cen_saved[id_keyname]
 
     # select centrals that satisfy both old and new selection
     if massive_selection == 'normal':
@@ -345,20 +358,20 @@ for z in z_bins:
         cat_massive_z_slice_new = cat_massive_gal_new[abs(cat_massive_gal_new['Z_BEST_BC03'] - z) < z_bin_size]
         if massive_selection == 'both':
             for gal in cat_massive_z_slice_old:
-                if gal['NUMBER'] in cat_massive_z_slice_new['NUMBER']:
+                if gal[id_keyname] in cat_massive_z_slice_new[id_keyname]:
                     cat_massive_z_slice.add_row(gal)
         elif massive_selection == 'new':
             for gal in cat_massive_z_slice_new:
-                if gal['NUMBER'] not in cat_massive_z_slice_old['NUMBER']:
+                if gal[id_keyname] not in cat_massive_z_slice_old[id_keyname]:
                     cat_massive_z_slice.add_row(gal)
         elif massive_selection == 'old':
             for gal in cat_massive_z_slice_old:
-                if gal['NUMBER'] not in cat_massive_z_slice_new['NUMBER']:
+                if gal[id_keyname] not in cat_massive_z_slice_new[id_keyname]:
                     cat_massive_z_slice.add_row(gal)
         elif massive_selection == 'both-central':
             cat_massive_both_central = Table.read('massive_gal_matched_cat/isolated_'+cat_name+'_'+str(z)+'_both_central.positions.fits')
             for gal in cat_massive_z_slice_old:
-                if gal['NUMBER'] in cat_massive_both_central['NUMBER']:
+                if gal[id_keyname] in cat_massive_both_central[id_keyname]:
                     cat_massive_z_slice.add_row(gal)
         else:
             raise NameError('Not acceptable massive_selection param.')
@@ -388,10 +401,11 @@ for z in z_bins:
         massive_count += 1
 
         ### ONLY FOR MASS-MATCHED CENTRAL (split sfq) SAMPLE
-        # if gal['NUMBER'] not in iso_cen_saved_ids:
+        # if gal[id_keyname] not in iso_cen_saved_ids:
         #     isolated_counts -= 1
         #     continue
 
+        print('Progress:' + str(massive_count) + '/' + str(len(cat_massive_z_slice)), end='\r')
         dis = WMAP9.angular_diameter_distance(gal[z_keyname]).value
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
         if check_edge(gal['RA'], gal['DEC'], dis):
@@ -406,15 +420,15 @@ for z in z_bins:
 
         # circular aperture cut, skip centrals that have no satellites
         if len(cat_neighbors) == 0:
-            print('No Satellite for', gal['NUMBER'])
+            print('No Satellite for', gal[id_keyname])
             continue
         else:
             coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
             cat_neighbors = cat_neighbors[coord_neighbors.separation(coord_gal).degree < 0.7 / dis / np.pi * 180]
 
-            cat_neighbors = cat_neighbors[cat_neighbors['NUMBER'] != gal['NUMBER']]  # exclude central galaxy from satellite catalog
+            cat_neighbors = cat_neighbors[cat_neighbors[id_keyname] != gal[id_keyname]]  # exclude central galaxy from satellite catalog
             if len(cat_neighbors) == 0:
-                print('No Satellite for', gal['NUMBER'])
+                print('No Satellite for', gal[id_keyname])
                 continue
 
         # isolation cut on central
@@ -457,7 +471,7 @@ for z in z_bins:
 
         # save satellite catalog (no bkg subtraction)
         if ssfq == 'all' and save_catalogs:
-            cat_neighbors.write(sat_cat_dir + cat_name + '_' + str(gal['NUMBER']) + '_sat.fits', overwrite=True)
+            cat_neighbors.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_sat.fits', overwrite=True)
 
         # get mean radius value of companions in each bin and stack
         bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=bin_edges)
