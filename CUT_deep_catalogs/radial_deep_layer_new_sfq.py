@@ -506,7 +506,7 @@ for z in z_bins:
 
             # detection completeness correction
             spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, ssfq)
-            coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname], dis,mode=mode)
+            coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
 
             radial_dist += sat_counts * spatial_weight
             if flag_bkg == 0:
@@ -517,7 +517,7 @@ for z in z_bins:
             binned_data = stats.binned_statistic(radius_list, 10 ** (mass_neighbors - 10), statistic='sum', bins=bin_edges)
             mass_binned = binned_data[0]
             sat_masses = np.array(mass_binned, dtype='f8')
-            coord_random_list, sat_masses_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal,gal[mass_keyname], dis, mode=mode)
+            coord_random_list, sat_masses_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
             radial_dist += sat_masses
             radial_count_dist += sat_counts
             if flag_bkg == 0:
