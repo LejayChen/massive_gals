@@ -9,7 +9,6 @@ from scipy import stats
 
 
 def check_edge(ra_rand, dec_rand, dis):
-
     cat_random_cut = cat_random_copy[abs(cat_random_copy['RA'] - ra_rand) < 0.7 / dis / np.pi * 180]
     cat_random_cut = cat_random_cut[abs(cat_random_cut['DEC'] - dec_rand) < 0.7 / dis / np.pi * 180]
 
@@ -92,15 +91,11 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode=
                 else:
                     sfq_weights = 1 - cat_neighbors_rand['sfProb']
 
-                if mode == 'count':
-                    counts_gals_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights), bins=bin_edges)[0]  # smoothed background, assuming bkg is uniform
-                    R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
-                    R_m_stack_bkg += R_m
-                    R_u_stack_bkg += R_u
-                elif mode == 'mass':
-                    binned_data_rand = stats.binned_statistic(radius_neighbors_rand, 10 ** (mass_neighbors_rand - 10), statistic='sum', bins=bin_edges)
-                    mass_binned_rand = binned_data_rand[0]
-                    counts_gals_rand += mass_binned_rand
+                counts_gals_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights), bins=bin_edges)[0]  # smoothed background, assuming bkg is uniform
+                R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
+                R_m_stack_bkg += R_m
+                R_u_stack_bkg += R_u
+
             else:
                 counts_gals_rand += np.zeros(bin_number)
 
@@ -459,17 +454,15 @@ for z in z_bins:
             cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < masscut_high]
         elif isinstance(masscut_high, str):  # relative cut
             cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < gal[mass_keyname]+np.log10(eval(masscut_high))]
-
-        mass_neighbors = cat_neighbors[mass_keyname]
         if len(cat_neighbors) == 0:
             if masscut_low_host == 11.15:
                 isolated_cat.remove_row(-1)
             continue  # central gals which has no satellite
 
+        # save satellite catalog (no bkg subtraction)
+        mass_neighbors = cat_neighbors[mass_keyname]
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         radius_list = coord_neighbors.separation(coord_gal).degree / 180. * np.pi * dis * 1000  # kpc
-
-        # save satellite catalog (no bkg subtraction)
         if ssfq == 'all' and save_catalogs:
             cat_neighbors.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_sat.fits', overwrite=True)
 
@@ -494,36 +487,26 @@ for z in z_bins:
 
         count_binned = np.histogram(radius_list, weights=np.array(sfq_weights), bins=bin_edges)[0]
         sat_counts = np.array(count_binned, dtype='f8')
+
+        # mask correction
         R_m, R_u = correct_for_masked_area(gal['RA'], gal['DEC'])
         R_m_stack += R_m
         R_u_stack += R_u
-        if mode == 'count':  # radial distribution histogram
-            z_three_bins = [0.4, 0.6, 0.8]
-            z_corr = 0.4
-            for z_corr_test in z_three_bins:
-                if abs(gal[z_keyname] - z_corr_test) < abs(gal[z_keyname] - z_corr):
-                    z_corr = z_corr_test
 
-            # detection completeness correction
-            spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, ssfq)
-            coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
+        # detection completeness correction
+        z_three_bins = [0.4, 0.6, 0.8]
+        z_corr = 0.4
+        for z_corr_test in z_three_bins:
+            if abs(gal[z_keyname] - z_corr_test) < abs(gal[z_keyname] - z_corr):
+                z_corr = z_corr_test
+        spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, ssfq)
 
-            radial_dist += sat_counts * spatial_weight
-            if flag_bkg == 0:
-                radial_dist_bkg += sat_counts_bkg * np.average(spatial_weight[-5:])
-                bkg_count = bkg_count + 1
-
-        else:                # mass distribution histogram
-            binned_data = stats.binned_statistic(radius_list, 10 ** (mass_neighbors - 10), statistic='sum', bins=bin_edges)
-            mass_binned = binned_data[0]
-            sat_masses = np.array(mass_binned, dtype='f8')
-            coord_random_list, sat_masses_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
-            radial_dist += sat_masses
-            radial_count_dist += sat_counts
-            if flag_bkg == 0:
-                radial_dist_bkg += sat_masses_bkg
-                bkg_count = bkg_count + 1
-        cat_random_copy = cut_random_cat(cat_random_copy, coord_random_list)
+        # bkg removal
+        coord_random_list, sat_counts_bkg, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
+        radial_dist += sat_counts * spatial_weight
+        if flag_bkg == 0:
+            radial_dist_bkg += sat_counts_bkg * np.average(spatial_weight[-5:])  # completeness correction
+            bkg_count = bkg_count + 1
 
         # keep record of how many satellites a central has
         n_sat.append(sum(sat_counts))
@@ -544,10 +527,7 @@ for z in z_bins:
 
     # error estimation (assuming Poisson errors)
     spatial_weight, spatial_weight_err = spatial_comp(z, masscut_low, masscut_high, ssfq)
-    if mode == 'count':
-        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts2, spatial_weight, spatial_weight_err) / areas
-    else:
-        err = cal_error(radial_dist, radial_dist_bkg, isolated_counts2, spatial_weight, spatial_weight_err) * (radial_dist / radial_count_dist) / areas
+    err = cal_error(radial_dist, radial_dist_bkg, isolated_counts2, spatial_weight, spatial_weight_err) / areas
     n_central, n_count, n_err = isolated_counts2, radial_dist_norm - radial_dist_bkg_norm, err
     result = np.append([n_central], [n_count, n_err])
 
@@ -556,20 +536,14 @@ for z in z_bins:
     n_bkg_err = cal_error2(radial_dist_bkg, bkg_count, spatial_weight, spatial_weight_err) / areas
     result_sat = np.append([n_central], [radial_dist_norm, n_sat_err])
     result_bkg = np.append([n_central], [radial_dist_bkg_norm, n_bkg_err])
-
-    # output result to file
     print('Finished gals: '+str(isolated_counts2)+'/'+str(len(cat_massive_z_slice)))
     print('Finished bkgs: '+str(bkg_count))
 
-    # output
+    # output result to file
     prefix = '_host_'+str(masscut_low_host) if split_central_mass else ''
-    filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output +'.txt'
-    filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output + '.txt'
-    filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' \
-               + str(ssfq) + '_' + z_output + '.txt'
-
+    filename = path + str(mode) + cat_name + prefix + '_' + str(masscut_low) + '_' + str(csfq) + '_'  + str(ssfq) + '_' + z_output +'.txt'
+    filename_sat = path + str(mode) + cat_name + prefix + '_sat_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + z_output + '.txt'
+    filename_bkg = path + str(mode) + cat_name + prefix + '_bkg_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + z_output + '.txt'
     if save_results:
         np.save(path + 'bin_edges', bin_edges)
         np.save(path + 'bin_centers', bin_centers_stack / companion_count_stack)
