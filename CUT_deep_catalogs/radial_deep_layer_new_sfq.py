@@ -26,7 +26,34 @@ def check_edge(ra_rand, dec_rand, dis):
         return False
 
 
-def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis, mode='count'):
+def bkg_clustering(cat_neighbors_z_slice_rand, ra_gal, dec_gal, coord_gal, dis):
+
+    cat_bkg = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_gal) < 5.0 / dis / np.pi * 180]
+    cat_bkg = cat_bkg[abs(cat_bkg['DEC'] - dec_gal) < 5.0 / dis / np.pi * 180]
+    coord_bkg = SkyCoord(cat_bkg['RA'] * u.deg, cat_bkg['DEC'] * u.deg)
+    cat_bkg = cat_bkg[abs(coord_bkg.separation(coord_gal).degree - 0.85 / dis / np.pi * 180) < 0.15 / dis / np.pi * 180]
+
+    if isinstance(masscut_low, float):
+        cat_bkg = cat_bkg[cat_bkg[mass_keyname] > masscut_low]
+    elif isinstance(masscut_low, str):
+        cat_bkg = cat_bkg[cat_bkg[mass_keyname] > gal['MASS_MED'] + np.log10(eval(masscut_low))]
+
+    if isinstance(masscut_high, float):
+        cat_bkg = cat_bkg[cat_bkg[mass_keyname] < masscut_high]
+    elif isinstance(masscut_high, str):
+        cat_bkg = cat_bkg[cat_bkg[mass_keyname] < gal[mass_keyname] + np.log10(eval(masscut_high))]
+
+    R_m, R_u = correct_for_masked_area_clustering(ra_gal, dec_gal)
+    R_m_stack_bkg += R_m
+    R_u_stack_bkg += R_u
+
+    counts_gals_rand = len(cat_bkg)
+    counts_gals_ssf_rand = sum(np.ones(len(cat_bkg))*cat_bkg['sfProb'])
+    counts_gals_sq_rand = sum(np.ones(len(cat_bkg))*(1-cat_bkg['sfProb']))
+    return counts_gals_rand, counts_gals_ssf_rand, counts_gals_sq_rand
+
+
+def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
     global R_m_stack_bkg, R_u_stack_bkg, z
     n = 0
     flag_bkg = 0
@@ -121,6 +148,31 @@ def add_to_random_points(coord_list):
     return 0
 
 
+def correct_for_masked_area_clustering(ra, dec, areas,area_c):
+    # correct area for normalization if it is partially in masked region
+    if not correct_masked:
+        return np.ones(bin_number), np.ones(bin_number)
+    else:
+        cat_nomask = cat_random_nomask[abs(cat_random_nomask['RA'] - ra) < 5.0 / dis / np.pi * 180]
+        cat_nomask = cat_nomask[abs(cat_nomask['DEC'] - dec) < 5.0 / dis / np.pi * 180]
+        cat_nomask = cat_nomask[abs(SkyCoord(cat_nomask['RA'] * u.deg, cat_nomask['DEC'] * u.deg).separation(coord_gal).degree - 0.85 / dis / np.pi * 180) < 0.15 / dis / np.pi * 180]
+
+        cat_mask = cat_random[abs(cat_random['RA'] - ra) < 5.0 / dis / np.pi * 180]
+        cat_mask = cat_mask[abs(cat_mask['DEC'] - dec) < 5.0 / dis / np.pi * 180]
+        cat_mask = cat_mask[abs(SkyCoord(cat_mask['RA'] * u.deg, cat_mask['DEC'] * u.deg).separation(coord_gal).degree - 0.85 / dis / np.pi * 180) < 0.15 / dis / np.pi * 180]
+
+        if len(cat_nomask) == 0:
+            return np.zeros(bin_number), np.zeros(bin_number)
+        else:
+            count_nomask = len(cat_nomask)
+            if len(cat_mask) == 0:
+                count_mask = np.zeros(bin_number)
+            else:
+                count_mask = len(cat_mask)
+
+            return count_mask*areas/area_c, count_nomask*areas/area_c
+
+
 def correct_for_masked_area(ra, dec):
     # correct area for normalization if it is partially in masked region
     if not correct_masked:
@@ -158,6 +210,11 @@ def correct_for_masked_area(ra, dec):
 def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
     if masscut_low_comp == 9.6:
         masscut_low_comp = 9.5
+    elif masscut_low_comp == 10.3:
+        masscut_low_comp = 10.2
+    if masscut_high_comp == 10.3:
+        masscut_high_comp = 10.2
+
     if not correct_completeness:
         return np.ones(bin_number), np.zeros(bin_number)
     else:
@@ -225,14 +282,14 @@ save_results = True
 save_catalogs = True
 save_massive_catalogs = True
 evo_masscut = False
+bkg_option = 'clustering'
 sat_z_cut = 4.5
-
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8]
 csfq = 'all'  # csf, cq, all
-ssfq_series = ['all', 'ssf', 'sq']
-masscut_low = 9.6
+ssfq_series = ['all']
+masscut_low = 9.5
 masscut_high = 13.0
-masscut_low_host = 11.0 if evo_masscut else 11.35
+masscut_low_host = 11.0 if evo_masscut else 11.15
 masscut_high_host = 13.0
 isolation_factor = 1
 sfprob_cut_low = 0.5
@@ -241,17 +298,17 @@ sfprob_cut_high = 0.5
 # setting binning scheme
 bin_number = 14
 bin_edges = 10 ** np.linspace(1.0, 2.845, num=bin_number + 1)
+area_c = (1000**2-700**2) * np.pi
 areas = np.array([])
 for i in range(len(bin_edges[:-1])):
     areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
 # read in data catalog
-cat_type = 'new'
-params = 'new'
+cat_type = 'old'
+params = 'old'
 massive_selection = 'normal'  # old, new, both-central,  or normal
-# path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params/'
-path = 'versionB/total_sample_M1135_m96_0404/'
-
+# path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params_0405/'
+path = 'test_bkg_c_0407/'
 print('start reading catalogs ...')
 if cat_type == 'old':
     if cat_name == 'SXDS_uddd':
@@ -291,9 +348,7 @@ else:
     raise ValueError(cat_type+': cat type not acceptable')
 
 cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
-
 print('cat_type', cat_type, ', param_type', params, z_keyname, mass_keyname, ', massive_selection', massive_selection)
-# print('No. of gals (after z<1.3, gal,m>9.0 and inside ):', len(cat_gal))
 if path[-1] != '/' and save_results:
     raise NameError('path is not a directory!')
 elif save_results:
@@ -501,16 +556,23 @@ for z in z_bins:
         spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, 'all')
         spatial_weight_ssf, spatial_weight_err_ssf = spatial_comp(z_corr, masscut_low, masscut_high, 'ssf')
         spatial_weight_sq, spatial_weight_err_sq = spatial_comp(z_corr, masscut_low, masscut_high, 'sq')
-
-        # bkg removal
-        coord_random_list, sat_counts_bkg, sat_counts_bkg_ssf, sat_counts_bkg_sq, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis, mode=mode)
         radial_dist += sat_counts * spatial_weight
         radial_dist_ssf += sat_counts_ssf * spatial_weight
         radial_dist_sq += sat_counts_sq * spatial_weight
-        if flag_bkg == 0:
-            radial_dist_bkg += sat_counts_bkg * np.average(spatial_weight[-5:])  # completeness correction
-            radial_dist_bkg_ssf += sat_counts_bkg_ssf * np.average(spatial_weight_ssf[-5:])  # completeness correction
-            radial_dist_bkg_sq += sat_counts_bkg_sq * np.average(spatial_weight_sq[-5:])  # completeness correction
+
+        # bkg removal
+        if bkg_option == 'random':
+            coord_random_list, sat_counts_bkg, sat_counts_bkg_ssf, sat_counts_bkg_sq, flag_bkg = bkg(cat_neighbors_z_slice, coord_massive_gal, gal[mass_keyname], dis)
+            if flag_bkg == 0:
+                radial_dist_bkg += sat_counts_bkg * np.average(spatial_weight[-5:])  # bkg completeness correction
+                radial_dist_bkg_ssf += sat_counts_bkg_ssf * np.average(spatial_weight_ssf[-5:])
+                radial_dist_bkg_sq += sat_counts_bkg_sq * np.average(spatial_weight_sq[-5:])
+                bkg_count = bkg_count + 1
+        else:
+            sat_counts_bkg, sat_counts_bkg_ssf, sat_counts_bkg_sq = bkg_clustering(cat_neighbors_z_slice, gal['RA'], gal['DEC'], coord_gal, dis)
+            radial_dist_bkg += sat_counts_bkg * np.ones(bin_number) * areas/area_c * np.average(spatial_weight[-5:])  # bkg completeness correction
+            radial_dist_bkg_ssf += sat_counts_bkg_ssf * areas/area_c * np.average(spatial_weight_ssf[-5:])
+            radial_dist_bkg_sq += sat_counts_bkg_sq * areas/area_c * np.average(spatial_weight_sq[-5:])
             bkg_count = bkg_count + 1
 
         # keep record of how many satellites a central has
