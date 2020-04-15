@@ -12,7 +12,7 @@ def check_edge(ra_rand, dec_rand, dis):
     cat_random_cut = cat_random_copy[abs(cat_random_copy['RA'] - ra_rand) < 2.5 / dis / np.pi * 180]
     cat_random_cut = cat_random_cut[abs(cat_random_cut['DEC'] - dec_rand) < 2.5 / dis / np.pi * 180]
     coord_random_cut = SkyCoord(cat_random_cut['RA'] * u.deg, cat_random_cut['DEC'] * u.deg)
-    cat_random_cut = cat_random_cut[coord_random_cut.separation(coord_gal).degree < 0.7 / dis / np.pi * 180]
+    cat_random_cut = cat_random_cut[coord_random_cut.separation(coord_random_cut).degree < 0.7 / dis / np.pi * 180]
 
     try:
         ra_ratio = len(cat_random_cut[cat_random_cut['RA'] < ra_rand])/len(cat_random_cut[cat_random_cut['RA'] > ra_rand])
@@ -73,11 +73,10 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
 
         num_before_success += 1
         if num_before_success > 100:
-            flag_bkg = 1
+            flag_bkg_rand = 1
             break
 
         if sep2d.degree > 1.4 / dis / np.pi * 180:  # make sure the random pointing is away from any central galaxy (blank)
-
             if check_edge(ra_rand, dec_rand, dis):
                 continue
 
@@ -131,7 +130,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
             coord_rand_list.append(coord_rand)
             flag_bkg_rand = 0
 
-    return coord_rand_list, counts_gals_rand, counts_gals_ssf_rand, counts_gals_sq_rand, flag_bkg
+    return coord_rand_list, counts_gals_rand, counts_gals_ssf_rand, counts_gals_sq_rand, flag_bkg_rand
 
 
 def cut_random_cat(cat_rand, coord_list):
@@ -289,7 +288,7 @@ bkg_option = 'random'  # 'random' or 'clustering'
 sat_z_cut = 4.5
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8]
 csfq = 'all'  # csf, cq, all
-ssfq_series = ['all']
+ssfq_series = ['all','ssf','sq']
 masscut_low = 9.5
 masscut_high = 13.0
 masscut_low_host = 11.0 if evo_masscut else 11.15
@@ -311,7 +310,7 @@ cat_type = 'old'
 params = 'old'
 massive_selection = 'normal'  # old, new, both-central,  or normal
 # path = 'total_sample_matched_cat_massive_'+massive_selection+'_'+params+'_params_0405/'
-path = 'total_sample_nomask_corr_0412/'
+path = 'total_sample_check_edge_0414/'
 print('start reading catalogs ...')
 if cat_type == 'old':
     if cat_name == 'SXDS_uddd':
@@ -450,6 +449,7 @@ for z in z_bins:
     # loop for all massive galaxies (potential central galaxy candidate)
     isolated_counts2 = 0
     isolated_cat = Table(names=cat_gal.colnames, dtype=[str(y[0]) for x, y in cat_gal.dtype.fields.items()])  # catalog of isolated central galaxies
+    print(len(cat_massive_z_slice))
     for gal in cat_massive_z_slice:
         massive_count += 1
 
