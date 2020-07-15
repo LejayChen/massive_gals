@@ -1,5 +1,5 @@
 import sys, os
-from random import random
+from random import random, sample
 import numpy as np
 import astropy.units as u
 from astropy.coordinates import SkyCoord, match_coordinates_sky
@@ -100,7 +100,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
                 elif isinstance(masscut_high, str):
                     cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < gal[mass_keyname] + np.log10(eval(masscut_high))]
 
-            # exclude bkg apertures that contains galaxies more massive than central
+            # exclude bkg apertures that contains galaxies more massive than central (only if not mag_cut)
             if not mag_cut:
                 if len(cat_neighbors_rand) > 0:
                     if max(cat_neighbors_rand[mass_keyname]) < mass_cen:
@@ -110,12 +110,14 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
                 else:
                     continue
 
+            # options to remove high-z contam. in matched cat
             if cat_type == 'matched' and remove_contam != 0:
                 if remove_contam == 1:
                     cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['zKDEPeak'] - cat_neighbors_rand['Z_BEST_BC03']) < 0.05 * cat_neighbors_rand['Z_BEST_BC03']]
                 else:
                     cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['zKDEPeak'] - cat_neighbors_rand['Z_BEST_BC03']) > 0.05 *cat_neighbors_rand['Z_BEST_BC03']]
 
+            # create radius list
             coord_neighbors_rand = SkyCoord(np.array(cat_neighbors_rand[ra_key]) * u.deg, np.array(cat_neighbors_rand[dec_key]) * u.deg)
             radius_neighbors_rand = coord_neighbors_rand.separation(coord_rand).degree / 180. * np.pi * dis * 1000
 
@@ -134,6 +136,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
                 counts_gals_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_rand), bins=bin_edges)[0]  # smoothed background, assuming bkg is uniform
                 counts_gals_ssf_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_ssf_rand), bins=bin_edges)[0]
                 counts_gals_sq_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_sq_rand), bins=bin_edges)[0]
+
                 R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
                 R_m_stack_bkg += R_m
                 R_u_stack_bkg += R_u
@@ -190,7 +193,8 @@ def correct_for_masked_area_clustering(ra, dec):
 
 
 def correct_for_masked_area(ra, dec):
-    # correct area for normalization if it is partially in masked region
+    # correct radial distribution for masked area (if central gal is in partially masked aperture)
+
     if not correct_masked:
         return np.ones(bin_number), np.ones(bin_number)
     else:
@@ -251,15 +255,15 @@ def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
 
     
 def cal_error(n_sample, n_bkg, n_central, w_comp, w_comp_err):
-    n_comp = np.array(n_sample - n_bkg).astype(float)
-    n_comp[n_comp==0] = 1
+
+    n_comp = np.array(n_sample - n_bkg).astype(float)  # number of satellites in each bin
+    n_comp[n_comp==0] = 1  # when calculating error, if no satellite in one bin, use n=1 in that bin to avoid ValueError
 
     if len(w_comp) != bin_number:
         w_comp = np.ones(bin_number)
         w_comp_err = np.zeros(bin_number)
 
-    sigma_n_sample_ori = np.sqrt(n_sample/w_comp)
-    sigma_n_sample_corr = np.sqrt(sigma_n_sample_ori**2*w_comp**2 + (n_sample/w_comp)**2*w_comp_err**2)
+    sigma_n_sample_corr = (n_comp/w_comp) * np.sqrt(1/n_comp+(w_comp_err/w_comp)**2)
     sigma_n_bkg = np.sqrt(n_bkg)
     sigma_n_comp = np.sqrt(sigma_n_sample_corr**2+sigma_n_bkg**2)
     sigma_n_central = np.array(np.sqrt(n_central)).astype(float)
@@ -299,7 +303,7 @@ save_results = True
 save_catalogs = True
 save_massive_catalogs = True
 evo_masscut = False
-no_z_cut = True # ignore redshift selection criteria for satellite selection
+no_z_cut = True  # ignore redshift selection criteria for satellite selection
 mag_cut = True  # if false then it's mass_cut == True
 remove_contam = 0  # 0-all (no remove), 1-goodz, 2-badz 3-remove all sats that do not satisfy both selection  |z_A - z_T|>0.05*z_Ts
 bkg_option = 'random'  # 'random' or 'clustering'
@@ -309,14 +313,14 @@ csfq = 'all'  # csf, cq, all
 ssfq_series = ['all']
 masscut_low = 9.5
 masscut_high = 13.0
-masscut_low_host = 11.0 if evo_masscut else 11.35
+masscut_low_host = 11.0 if evo_masscut else 11.15
 masscut_high_host = 13.0
 sfprob_cut_low = 0.5
 sfprob_cut_high = 0.5
 
 # magnitude cuts
 mag_keynames = ['ri', 'i', 'z']
-magcut_highs = [25, 25.92, 26.56]
+magcut_highs = [24, 24.91, 25.55]
 
 # setting binning scheme
 bin_number = 14
@@ -328,11 +332,10 @@ for i in range(len(bin_edges[:-1])):
 
 # read in data catalog
 cat_type = 'matched'
-params = 'new'
+params = 'old'
 massive_selection = 'normal'  # old, new, both-central,  or normal
-path = 'total_sample_matched_cat_'+params+'_params_magcut_0624/'
+path = 'total_sample_matched_cat_old_params_magcut_0624/'
 print('start reading catalogs ...')
-
 
 if cat_type == 'old':
     if cat_name == 'SXDS_uddd':
@@ -342,7 +345,6 @@ if cat_type == 'old':
     mass_keyname = 'MASS_MED'
     id_keyname = 'NUMBER'
     cat = cat[~np.isnan(cat[z_keyname])]
-    cat = cat[cat[z_keyname] < 1.7]
     cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
     ra_key = 'RA'
     dec_key = 'DEC'
@@ -356,13 +358,13 @@ elif cat_type == 'matched':
         z_keyname = 'Z_BEST_BC03'
         mass_keyname = 'MASS_MED_new'
         cat = cat[~np.isnan(cat[z_keyname])]
-        # cat = cat[cat[z_keyname] < 1.7]
         cat_gal = cat[cat['CLASS'] < 10]
+        cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
     else:
         z_keyname = 'zKDEPeak'
         mass_keyname = 'MASS_MED'
         cat = cat[~np.isnan(cat[z_keyname])]
-        # cat = cat[cat[z_keyname] < 1.7]
+        cat_gal = cat[cat['CLASS'] < 10]
         cat_gal = cat[np.logical_and(cat['preds_median'] < 0.89, cat['inside'] == True)]
 elif cat_type == 'COSMOS2015':
     cat = Table.read('../COSMOS2015_Laigle+_v1.1_trim.fits')
@@ -372,7 +374,6 @@ elif cat_type == 'COSMOS2015':
     mass_keyname = 'MASS_MED'
     id_keyname = 'NUMBER'
     cat = cat[~np.isnan(cat[z_keyname])]
-    cat = cat[cat[z_keyname] < 1.7]
     cat_gal = cat[cat['CLASS'] < 10]
 elif cat_type == 'new':
     cat = Table.read('UV_CUT_CLAUDS_HSC_S16A_' + cat_name + '.fits')
@@ -382,7 +383,6 @@ elif cat_type == 'new':
     ra_key = 'RA'
     dec_key = 'DEC'
     cat = cat[~np.isnan(cat[z_keyname])]
-    cat = cat[cat[z_keyname] < 1.7]
     cat_gal = cat[cat['CLASS'] < 10]
 else:
     raise ValueError(cat_type+': cat type not acceptable')
@@ -418,13 +418,11 @@ cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))   # to store position o
 if cat_type == 'old' and cat_name == 'SXDS3_uddd':
     cat_name = 'SXDS_uddd'
 
-
-
 # ############ main loop ################
 for z_bin_count, z in enumerate(z_bins):
-    mag_keyname = mag_keynames[z_bin_count]
     z = round(z, 1)
     z_bin_size = 0.3 if all_z else 0.1
+    mag_keyname = mag_keynames[z_bin_count]
 
     # prepare directory for satellite catalogs
     sat_cat_dir = path + cat_name+'_'+str(z*10)+'/'
@@ -450,7 +448,7 @@ for z_bin_count, z in enumerate(z_bins):
         cat_massive_z_slice_old = cat_massive_gal_old[abs(cat_massive_gal_old['zKDEPeak'] - z) < z_bin_size]
         cat_massive_gal_new = cat_gal[np.logical_and(cat_gal['MASS_MED_new'] > 11.35, cat_gal['MASS_MED_new'] < 13.0)]
         cat_massive_z_slice_new = cat_massive_gal_new[abs(cat_massive_gal_new['Z_BEST_BC03'] - z) < z_bin_size]
-        if massive_selection == 'both':
+        if massive_selection == 'both':  # 'both' matches massive gals without isolation criteria
             for gal in cat_massive_z_slice_old:
                 if gal[id_keyname] in cat_massive_z_slice_new[id_keyname]:
                     cat_massive_z_slice.add_row(gal)
@@ -470,9 +468,12 @@ for z_bin_count, z in enumerate(z_bins):
         else:
             raise NameError('Not acceptable massive_selection param.')
     else:
-        raise NameError('Only "normal" selection for not matched catalog.')
+        raise NameError('Only "normal" selection for non-matched catalog.')
 
     # ---------------------
+    # randomly select half of the original centrals
+    # cat_massive_z_slice = cat_massive_z_slice[sample([*range(len(cat_massive_z_slice))], int(0.5*len(cat_massive_z_slice)))]
+
     print('No. of massive gals:', len(cat_massive_z_slice))
     coord_massive_gal = SkyCoord(np.array(cat_massive_z_slice[ra_key]) * u.deg, np.array(cat_massive_z_slice[dec_key]) * u.deg)
 
@@ -493,7 +494,7 @@ for z_bin_count, z in enumerate(z_bins):
     massive_count = 0
     bkg_count = 0
     bin_centers_stack = 0
-    companion_count_stack = 0
+    companion_count_stack = 0  # used to determine bin_centers
     n_sat = []  # number of satellites per central
     n_bkg = []  # number of bkg contamination per central
     R_m_stack = np.ones(bin_number) * 1e-6  # number of random points (masked) in each bin
@@ -506,6 +507,7 @@ for z_bin_count, z in enumerate(z_bins):
     isolated_cat = Table(names=cat_gal.colnames, dtype=[str(y[0]) for x, y in cat_gal.dtype.fields.items()])  # catalog of isolated central galaxies
     for gal in cat_massive_z_slice:
         massive_count += 1
+
         isolation_factor = 10 ** 0
         # isolation_factor = 10 ** (1*(gal['MASS_MED']-gal['MASS_INF']))
 
@@ -521,12 +523,11 @@ for z_bin_count, z in enumerate(z_bins):
 
         # prepare neighbors catalog
         if no_z_cut:
-            cat_neighbors_z_slice = cat_gal
+            cat_neighbors_z_slice = cat_gal  # NO redshift cut in this case
         else:
             cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice[z_keyname] - gal[z_keyname]) < sat_z_cut * 0.044 * (1 + gal[z_keyname])]
-            # cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice[z_keyname] - 1.5) < 0.1]
 
-        # (initial rectengular spatial cut)
+        # initial rectangular spatial cut
         cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice[ra_key] - gal[ra_key]) < 2.5 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[abs(cat_neighbors[dec_key] - gal[dec_key]) < 2.5 / dis / np.pi * 180]
 
@@ -577,7 +578,7 @@ for z_bin_count, z in enumerate(z_bins):
                 cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < gal[mass_keyname]+np.log10(eval(masscut_high))]
 
         # remove satellite that do not agree between old and new redshifts
-        # works only in matched catalog
+        # works only in matched catalog (with no_z_cut==False)
         if cat_type == 'matched' and remove_contam != 0:
             if remove_contam == 1:
                 cat_neighbors = cat_neighbors[abs(cat_neighbors['zKDEPeak'] - cat_neighbors['Z_BEST_BC03']) < 0.05 * cat_neighbors['Z_BEST_BC03']]
@@ -591,7 +592,7 @@ for z_bin_count, z in enumerate(z_bins):
                 else:
                     cat_neighbors = cat_neighbors[cat_neighbors['MASS_MED'] > 9.5]
 
-        # centrals with no satellite within mass range
+        # skip centrals with no satellite within mass range
         if len(cat_neighbors) == 0:
             isolated_cat.add_row(gal)
             isolated_counts2 += 1
@@ -599,7 +600,6 @@ for z_bin_count, z in enumerate(z_bins):
             continue
 
         # save satellite catalog (no bkg subtraction)
-        # mass_neighbors = cat_neighbors[mass_keyname]
         coord_neighbors = SkyCoord(np.array(cat_neighbors[ra_key]) * u.deg, np.array(cat_neighbors[dec_key]) * u.deg)
         radius_list = coord_neighbors.separation(coord_gal).degree / 180. * np.pi * dis * 1000  # kpc
         if ('all' in ssfq_series) and save_catalogs:
@@ -643,6 +643,7 @@ for z_bin_count, z in enumerate(z_bins):
         spatial_weight, spatial_weight_err = spatial_comp(z_corr, masscut_low, masscut_high, 'all')
         spatial_weight_ssf, spatial_weight_err_ssf = spatial_comp(z_corr, masscut_low, masscut_high, 'ssf')
         spatial_weight_sq, spatial_weight_err_sq = spatial_comp(z_corr, masscut_low, masscut_high, 'sq')
+
         radial_dist += sat_counts * spatial_weight
         radial_dist_ssf += sat_counts_ssf * spatial_weight
         radial_dist_sq += sat_counts_sq * spatial_weight
@@ -715,4 +716,3 @@ for z_bin_count, z in enumerate(z_bins):
                 np.savetxt(filename, result)
                 np.savetxt(filename_sat, result_sat)
                 np.savetxt(filename_bkg, result_bkg)
-
