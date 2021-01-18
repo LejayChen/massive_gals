@@ -13,8 +13,10 @@ for idd in ids:
     try:
         cat = Table.read(im.replace('.fits', '_all_cat.fits').replace('cutout_', ''))
         cat = cat[cat['ORIGINAL'] == False]
+
         print('Read '+im.replace('.fits', '_all_cat.fits').replace('cutout_', ''))
         cat_list.append(cat)
+
     except FileNotFoundError:
         print(im.replace('.fits', '_all_cat.fits').replace('cutout_', '')+' not found!')
 
@@ -23,7 +25,7 @@ cat_stack.write(cat_stack_dir+cat_stack_name, overwrite=True)
 print('Merged '+str(len(ids))+' catalogs into '+cat_stack_dir+cat_stack_name)
 
 # match the complteness estimation catalog with physical catalog
-cat_phys = '/home/lejay/catalogs/v2_cats/'+cat_name+'_v2_v200930.fits'
+cat_phys = '/home/lejay/catalogs/v2_cats/'+cat_name+'_gal_cut_params.fits'  # physical catalog but with only useful parameters
 cmd = 'java -jar -Xms128m -Xmx1500m stilts.jar tmatch2 in1='+cat_stack_dir+cat_stack_name + \
      ' in2='+cat_phys+' find=best1 join=all1 matcher=sky params=1 values1="RA_deShift DEC_deShift"' + \
      ' values2="RA'+' DEC'+'" out='+cat_stack_dir+'matched_'+cat_stack_name

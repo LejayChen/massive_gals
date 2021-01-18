@@ -67,8 +67,8 @@ else:
 
         elif as_func_of == 'mass':
             # redshift cut
-            mock_cat = mock_cat[mock_cat['Z_BEST'] > z_low]
-            mock_cat = mock_cat[mock_cat['Z_BEST'] < z_high]
+            mock_cat = mock_cat[mock_cat['ZPHOT'] > z_low]
+            mock_cat = mock_cat[mock_cat['ZPHOT'] < z_high]
 
             bin_number = 25
             bin_edges = np.linspace(7, 13, num=bin_number)
