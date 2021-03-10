@@ -15,12 +15,12 @@ need patch images as input
 '''
 
 cat_name = sys.argv[1]  # catalog name (field name)
-n_cutout = 10  # number of cutout images per patch
+n_cutout = 7  # number of cutout images per patch
 cutout_size=600 #pix
 
-ims = open('Ims/ims_'+cat_name+'.txt').readlines()  # chi2 patch images
+ims = open('Ims/ims_'+cat_name+'_new.txt').readlines()  # chi2 patch images
 rand1_ids = open('Rand1_ids/rand1_ids_'+cat_name+'.txt', 'w')  # random position IDs
-cutout_path = '/home/lejay/scratch/'  # directory to save cutout images at each random position
+cutout_path = '/scratch-deleted-2021-mar-20/lejay/'  # directory to save cutout images at each random position
 
 # random point catalog
 cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name+'_random_point.fits')
@@ -64,22 +64,19 @@ for im in ims:
         ra_rand1 = cat_random_cut[rand_id1]['RA']
         dec_rand1 = cat_random_cut[rand_id1]['DEC']
 
+        # mkdir for storing cutout images
+        cutout_patch_path = cutout_path + tract + '_' + patch[0] + patch[-1] + '_' + str(i) + '/'
+        mkdir(cutout_patch_path)  # store cutouts for each galaxy in individual folders
+
         # cut sources
         x_rand1, y_rand1 = w.wcs_world2pix(ra_rand1, dec_rand1, 0)
         if abs(x_rand1-x_shape/2.) < x_shape/2.-cutout_size/2 and abs(y_rand1-y_shape/2.) < y_shape/2.-cutout_size/2:  # (not on edge)
-            mkdir('/home/lejay/scratch/'+tract+'_'+patch[0]+patch[-1]+'_'+str(i))  # store cutouts for each galaxy in individual folders
-
             # cut for source
-            cutout_path = '/home/lejay/scratch/'+tract+'_'+patch[0]+patch[-1]+'_'+str(i)+'/'
             cutoutimg(im, x_rand1, y_rand1, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
-                      outfile=cutout_path+'cutout_'+tract+'_'+patch[0]+patch[-1]+'_'+str(i)+'.fits')
-
-            # cutoutimg(var, x_rand1, y_rand1, xw=225, yw=225, units='pixels',
-            #           outfile=cutout_path + 'cutout_var_' + tract + '_' + patch[0] + patch[-1] + '_' + str(i) + '.fits')
+                      outfile=cutout_patch_path+'cutout_'+tract+'_'+patch[0]+patch[-1]+'_'+str(i)+'.fits')
 
             # n_cutout random2 positioned image cutouts for each random1 cutout
             # for each random1 position, cut 10 random2 positions (for later stacking and estimate of recover rate)
-
             random_count = 0
             while random_count < n_cutout:
                 id_rand2 = int(random() * len(cat_random_cut))
@@ -91,8 +88,7 @@ for im in ims:
                 if abs(x_rand-x_shape/2.) < x_shape/2.-cutout_size/2 and abs(y_rand-y_shape/2.) < y_shape/2.-cutout_size/2:
                     random_count += 1
                     cutoutimg(im, x_rand, y_rand, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
-                              outfile=cutout_path + 'cutout_' + tract+'_'+patch[0]+patch[-1]+'_'+
-                                      str(i) + '_' + str(random_count - 1) + '_rand.fits')
+                              outfile=cutout_patch_path + 'cutout_' + tract+'_'+patch[0]+patch[-1]+'_'+str(i)+'_'+str(random_count-1)+'_rand.fits')
 
             if random_count >= n_cutout:
                 rand1_ids.write(tract+'_'+patch[0]+patch[-1]+'_'+str(i)+'\n')

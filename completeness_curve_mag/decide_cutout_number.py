@@ -1,20 +1,13 @@
 def decide_cutout_number(z):
     z = float(z)
-    if z<0.25:
-        n_cutout = 30
-    elif z<0.35:
-        n_cutout = 25
-    elif z<0.45:
-        n_cutout = 22
-    elif z<0.55:
-        n_cutout = 20
-    elif z<0.65:
-        n_cutout = 20
-    elif z<0.75:
-        n_cutout = 18
-    elif z<0.85:
-        n_cutout = 15
-    else:
-        n_cutout = 10
+    if z<0.5:
+        n_cutout = 40
+        cutout_size = 110.0
+    if z < 0.5:
+        n_cutout = 50
+        cutout_size = 80.0
+    if z < 0.5:
+        n_cutout = 60
+        cutout_size = 65.0
 
-    return n_cutout
+    return n_cutout, cutout_size

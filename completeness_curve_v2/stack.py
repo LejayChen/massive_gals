@@ -26,4 +26,4 @@ print('Merged '+str(len(ids))+' catalogs into '+cat_stack_name)
 
 for idd in ids:
     idd = idd.rstrip()
-    os.system('rm '+cutout_path+'/'+idd+'/*_all_cat.fits')
+    os.system('rm *_all_cat.fits')

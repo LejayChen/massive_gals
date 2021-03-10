@@ -134,7 +134,7 @@ def cutoutimg(filename, xc, yc, xw=25, yw=25, units='pixels', outfile=None,
         newfile = pyfits.PrimaryHDU(data=img, header=head)
         if verbose: print("Cut image %s with dims %s to %s.  xrange: %f:%f, yrange: %f:%f" % (filename, file[0].data.shape,img.shape,xmin,xmax,ymin,ymax))
 
-    if isinstance(outfile,str):
+    if isinstance(outfile, str):
         newfile.writeto(outfile, overwrite=overwrite)
 
     if opened:

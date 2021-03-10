@@ -10,10 +10,14 @@ import os, sys
 
 cat_name = sys.argv[1]
 z = str(sys.argv[2])
-ims = open('Ims/ims_'+cat_name+'.txt').readlines()
+n_cutout, cutout_size = decide_cutout_number(z)
+
+# filenames and pathss
+ims = open('Ims/ims_'+cat_name+'.txt').readlines()  # chi2 patch images
 gal_ids = open('Gal_ids/gal_ids_'+cat_name+'_'+z+'.txt', 'w')
-cutout_path = '/home/lejay/scratch/'
-n_cutout = decide_cutout_number(z)
+cutout_path = '/scratch-deleted-2021-mar-20/lejay/'
+
+# load random point catalog
 cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name+'_random_point.fits')
 cat_random = cat_random[np.logical_and(cat_random['inside'] != 0, cat_random['MASK']==False)]
 
@@ -25,10 +29,10 @@ for im in ims:
     print(tract, patch)
 
     # load central galaxy catalog
-    cat = Table.read('/home/lejay/v2_matched_centrals/central_'+cat_name+'_'+z+'.fits')
-    cat = cat[cat['TRACT'] == eval(tract)]
-    cat = cat[cat['PATCH'] == patch]
-    print('Number of massive gal in this patch:'+'('+str(tract)+' '+str(patch)+') is', len(cat))
+    cat_massive = Table.read('/home/lejay/radial_dist_code/central_cat/isolated_'+cat_name+'_11.15_'+z+'_massive.positions.fits')
+    cat_massive = cat_massive[cat_massive['TRACT'] == eval(tract)]
+    cat_massive = cat_massive[cat_massive['PATCH'] == patch]
+    print('Number of massive gal in this patch'+'('+str(tract)+' '+str(patch)+') is:', len(cat_massive))
 
     # append path for im
     imSaveLoc = '/home/lejay/projects/def-sawicki/lejay/new_chi2_imgs/'
@@ -47,24 +51,33 @@ for im in ims:
         # cut random point catalog (within patch limit)
         cat_random_cut = cat_random[np.logical_and(cat_random['RA']>ra_min, cat_random['RA']<ra_max)]
         cat_random_cut = cat_random_cut[np.logical_and(cat_random_cut['DEC']>dec_min, cat_random_cut['DEC']<dec_max)]
-        if len(cat_random_cut)==0:
-            print('len(cat_random_cut)=='+str(len(cat_random_cut)))
+        if len(cat_random_cut) < 100:
+            print('cut_patch_gals: len(cat_random_cut)=='+str(len(cat_random_cut)))
             continue
 
     except IOError:
-        print(im+' not found.')
+        print('cut_patch_gals: '+im+' not found.')
         continue
 
     # cut sources
-    for gal in cat:
+    for gal in cat_massive:
         x_gal, y_gal = w.wcs_world2pix(gal['RA'], gal['DEC'], 0)
-        if abs(x_gal-x_shape/2.) < x_shape/2.-225 and abs(y_gal-y_shape/2.) < y_shape/2.-225:  # (not on edge)
-            mkdir('/home/lejay/scratch/'+str(gal['ID']))  # store cutouts for each galaxy in individual folders
+        if abs(x_gal-x_shape/2.) < x_shape/2. - cutout_size/2 and abs(y_gal-y_shape/2.) < y_shape/2.-cutout_size/2:  # (not on edge)
+            file_cutout_path = cutout_path + str(gal['ID']) + '/'
+            mkdir(file_cutout_path)  # store cutouts for each galaxy in individual folders
 
             # cut for source
-            cutout_path = '/home/lejay/scratch/'+str(gal['ID'])+'/'
-            cutoutimg(im, x_gal, y_gal, xw=225, yw=225, units='pixels',
-                      outfile=cutout_path+'cutout_'+gal['ID']+'.fits')
+            if os.path.exists(file_cutout_path):
+                try:
+                    cutoutimg(im, x_gal, y_gal, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
+                              outfile=file_cutout_path + 'cutout_'+str(gal['ID'])+'.fits')
+                except FileNotFoundError:
+                    print('OHHHHHH '+file_cutout_path + 'cutout_'+str(gal['ID'])+'.fits')
+                    continue
+
+            else:
+                print(file_cutout_path+' does not exist!')
+                continue
 
             # n_cutout random positioned image cutouts for each gal cutout
             random_count = 0
@@ -75,10 +88,10 @@ for im in ims:
                 x_rand, y_rand = w.wcs_world2pix(ra_rand, dec_rand, 0)
 
                 # cutout at random position
-                if abs(x_rand-x_shape/2.) < x_shape/2.-225 and abs(y_rand-y_shape/2.) < y_shape/2.-225:
+                if abs(x_rand-x_shape/2.) < x_shape/2.-cutout_size/2 and abs(y_rand-y_shape/2.) < y_shape/2.-cutout_size/2:
                     random_count += 1
-                    cutoutimg(im, x_rand, y_rand, xw=225, yw=225, units='pixels',
-                              outfile=cutout_path + 'cutout_' + gal['ID'] + '_' + str(random_count - 1) + '_rand.fits')
+                    cutoutimg(im, x_rand, y_rand, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
+                              outfile=file_cutout_path + 'cutout_' + str(gal['ID']) + '_' + str(random_count - 1) + '_rand.fits')
 
             if random_count >= n_cutout:
                 gal_ids.write(str(gal['ID'])+'\n')
