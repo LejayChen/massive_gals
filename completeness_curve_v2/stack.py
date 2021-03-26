@@ -6,8 +6,8 @@ cat_name = sys.argv[1]
 z = str(sys.argv[2])
 output_path = 'Output_cats/'
 cat_stack_name = 'cat_stack_'+cat_name+'_'+z+'.fits'
-ids = open('Gal_ids/gal_ids_'+cat_name+'_'+z+'.txt').readlines()
-cutout_path = '/scratch-deleted-2021-mar-20/lejay/'
+ids = open('Gal_ids/gal_ids_'+cat_name+'_'+z+'.txt').readlines()[:30]
+cutout_path = '/home/lejay/scratch/'
 
 cat_list = []
 for idd in ids:
@@ -26,4 +26,4 @@ print('Merged '+str(len(ids))+' catalogs into '+cat_stack_name)
 
 for idd in ids:
     idd = idd.rstrip()
-    os.system('rm *_all_cat.fits')
+    os.system('rm '+idd+'_all_cat.fits')

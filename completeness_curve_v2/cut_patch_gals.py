@@ -10,17 +10,19 @@ import os, sys
 
 cat_name = sys.argv[1]
 z = str(sys.argv[2])
+print('python', cat_name, z)
 n_cutout, cutout_size = decide_cutout_number(z)
 
-# filenames and pathss
+# filenames and paths
 ims = open('Ims/ims_'+cat_name+'.txt').readlines()  # chi2 patch images
 gal_ids = open('Gal_ids/gal_ids_'+cat_name+'_'+z+'.txt', 'w')
-cutout_path = '/scratch-deleted-2021-mar-20/lejay/'
+cutout_path = '/home/lejay/scratch/'
 
 # load random point catalog
 cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name+'_random_point.fits')
 cat_random = cat_random[np.logical_and(cat_random['inside'] != 0, cat_random['MASK']==False)]
 
+print(ims)
 for im in ims:
     im = im.rstrip()
     splitter = '-'
@@ -63,16 +65,16 @@ for im in ims:
     for gal in cat_massive:
         x_gal, y_gal = w.wcs_world2pix(gal['RA'], gal['DEC'], 0)
         if abs(x_gal-x_shape/2.) < x_shape/2. - cutout_size/2 and abs(y_gal-y_shape/2.) < y_shape/2.-cutout_size/2:  # (not on edge)
-            file_cutout_path = cutout_path + str(gal['ID']) + '/'
+            idd = cat_name+'_'+str(gal['ID'])
+            file_cutout_path = cutout_path + idd + '/'
             mkdir(file_cutout_path)  # store cutouts for each galaxy in individual folders
 
             # cut for source
             if os.path.exists(file_cutout_path):
                 try:
-                    cutoutimg(im, x_gal, y_gal, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
-                              outfile=file_cutout_path + 'cutout_'+str(gal['ID'])+'.fits')
-                except FileNotFoundError:
-                    print('OHHHHHH '+file_cutout_path + 'cutout_'+str(gal['ID'])+'.fits')
+                    cutoutimg(im, x_gal, y_gal, xw=cutout_size/2, yw=cutout_size/2, units='pixels', outfile=file_cutout_path + 'cutout_'+idd+'.fits')
+                except (FileNotFoundError, ValueError) as e:
+                    print('background image position failed for '+file_cutout_path + idd+'.fits')
                     continue
 
             else:
@@ -81,20 +83,28 @@ for im in ims:
 
             # n_cutout random positioned image cutouts for each gal cutout
             random_count = 0
+            random_count_check = 0
             while random_count < n_cutout:
                 id_rand = int(random() * len(cat_random_cut))
                 ra_rand = cat_random_cut[id_rand]['RA']
                 dec_rand = cat_random_cut[id_rand]['DEC']
                 x_rand, y_rand = w.wcs_world2pix(ra_rand, dec_rand, 0)
+                random_count_check += 1
 
                 # cutout at random position
                 if abs(x_rand-x_shape/2.) < x_shape/2.-cutout_size/2 and abs(y_rand-y_shape/2.) < y_shape/2.-cutout_size/2:
                     random_count += 1
-                    cutoutimg(im, x_rand, y_rand, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
-                              outfile=file_cutout_path + 'cutout_' + str(gal['ID']) + '_' + str(random_count - 1) + '_rand.fits')
+                    try:
+                        cutoutimg(im, x_rand, y_rand, xw=cutout_size/2, yw=cutout_size/2, units='pixels',
+                              outfile=file_cutout_path + 'cutout_'+idd + '_' + str(random_count - 1) + '_rand.fits')
+                    except (FileNotFoundError, ValueError) as e:
+                        print('random source image position failed for' + file_cutout_path + idd + '_' + str(random_count - 1) + '.fits')
+                        continue
+                elif random_count_check > 100:
+                    break
 
             if random_count >= n_cutout:
-                gal_ids.write(str(gal['ID'])+'\n')
+                gal_ids.write(idd+'\n')
             else:
                 continue
 
