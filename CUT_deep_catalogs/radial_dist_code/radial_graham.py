@@ -33,6 +33,9 @@ def check_edge(ra_rand, dec_rand, dis):
 
 
 def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
+    
+    cat_neighbors_z_slice_rand = cat_neighbors_z_slice_rand[cat_neighbors_z_slice_rand[mass_keyname] > masscut_low]
+    cat_neighbors_z_slice_rand = cat_neighbors_z_slice_rand[cat_neighbors_z_slice_rand[mass_keyname] < masscut_high]
 
     global R_m_stack_bkg, R_u_stack_bkg, z
     flag_bkg_rand = -1
@@ -43,8 +46,8 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
     coord_rand_list = []
     while flag_bkg_rand == -1:  # get several blank pointing's to estimate background
         id_rand = int(random() * len(cat_random_copy))
-        ra_rand = cat_random_copy[id_rand]['RA']
-        dec_rand = cat_random_copy[id_rand]['DEC']
+        ra_rand = cat_random_copy[id_rand][ra_key]
+        dec_rand = cat_random_copy[id_rand][dec_key]
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
 
         num_before_success += 1
@@ -197,7 +200,6 @@ def cal_error_bkg(n_sample, n_bkg_aper, w_comp):
 
 
 # ################# START #####################
-evo_masscut = False
 split_central_mass = False
 all_z = False
 correct_completeness = False
@@ -205,7 +207,8 @@ correct_masked = False
 check_edge_flag = True
 save_results = True
 save_catalogs = False
-save_massive_catalogs = True
+
+cen_selection = 'normal'  # pre_select or normal
 cat_name = sys.argv[1]  # COSMOS_deep ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
 try:
     sat_z_cut = float(sys.argv[2])
@@ -214,12 +217,23 @@ except ValueError:
 path = sys.argv[3]
 masscut_low = float(sys.argv[4])
 masscut_high = float(sys.argv[5])
-masscut_low_host = 11.0 if evo_masscut else float(sys.argv[6])
-csfq = sys.argv[7]  # csf, cq, all
-sfq_keyname = sys.argv[8]
-masscut_high_host = 13.0
+
+try:
+    masscut_low_host = float(sys.argv[6])
+    masscut_high_host = float(sys.argv[7])
+    evo_masscut = False
+    save_massive_catalogs = True
+except ValueError:
+    masscut_low_host = 11.0
+    masscut_high_host = 13.0
+    evo_masscut = True
+    save_massive_catalogs = False
+
+csfq = sys.argv[8]  # csf, cq, all
+sfq_keyname = sys.argv[9]
+
 rmax = 'fixed'
-ssfq_series = ['all','ssf','sq']
+ssfq_series = ['all', 'ssf', 'sq']
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8, 1.0]
 bin_number = 14
 
@@ -234,41 +248,6 @@ if rmax == 'fixed':
     for i in range(len(bin_edges[:-1])):
         areas = np.append(areas, (bin_edges[i + 1] ** 2 - bin_edges[i] ** 2) * np.pi)
 
-cat_type = sys.argv[9]
-
-if cat_type == 'v8':
-    cat = Table.read('/home/lejay/catalogs/v8_cats/' + cat_name + '_v8_gal_cut_params_sfq_added.fits')  # galaxy selection already done?
-    cat = cat[cat['MASK'] == 0]  # unmasked
-    cat_gal = cat[cat['OBJ_TYPE'] == 0]  # galaxies
-    z_keyname = 'ZPHOT'
-    mass_keyname = 'MASS_MED'
-    id_keyname = 'ID'
-    ra_key = 'RA'
-    dec_key = 'DEC'
-    if cat_name == 'XMM-LSS_deep':
-        cat = cat[cat['inside_uS'] == True]
-    else:
-        cat = cat[cat['inside_u'] == True]
-else:
-    # COSMOS2020
-    cat = Table.read('/home/lejay/catalogs/COSMOS2020_CLASSIC_v1.8.1_formatted_trim_column_renamed.fits')  # galaxy selection already done?
-    cat = cat[cat['mask'] == 0]  # unmasked
-    cat_gal = cat[cat['type'] == 0]  # galaxies
-    z_keyname = 'zPDF'
-    mass_keyname = 'mass_med'
-    id_keyname = 'Id'
-    ra_key = 'alpha'
-    dec_key = 'delta'
-    correct_masked = False
-
-cat_gal = cat_gal[~np.isnan(cat_gal[z_keyname])]
-cat_gal = cat_gal[~np.isnan(cat_gal[mass_keyname])]
-cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
-cat_gal = cat_gal[cat_gal['r'] < 25]
-if sat_z_cut != 'highz':
-    cat_gal = cat_gal[cat_gal[sfq_keyname] >= 0]
-    cat_gal = cat_gal[cat_gal[sfq_keyname] <= 1]
-
 # output run settings and check save path
 if path[-1] != '/' and save_results:
     raise NameError('path is not a directory!')
@@ -279,21 +258,64 @@ elif save_results:
 else:
     print('will NOT save results!')
 
+cat_type = sys.argv[10]
+if cat_type == 'v9':
+    cat = Table.read('/home/lejay/catalogs/v9_cats/' + cat_name + '_v9_gal_cut_params_sfq_added.fits')  # galaxy selection already done?
+    z_keyname = 'ZPHOT'
+    mass_keyname = 'MASS_MED'
+    id_keyname = 'ID'
+    ra_key = 'RA'
+    dec_key = 'DEC'
+    save_massive_catalogs = True
+    if cat_name == 'XMM-LSS_deep':
+        cat = cat[cat['inside_uS'] == True]
+    else:
+        cat = cat[cat['inside_u'] == True]
+    if 'inside_j' in path:
+        cat = cat[cat['inside_j'] == True]
+    cat = cat[cat['MASK'] == 0]  # unmasked
+    cat_gal = cat[cat['OBJ_TYPE'] == 0]  # galaxies
+
+else:
+    # COSMOS2020
+    cat = Table.read('/home/lejay/catalogs/photoz_cosmos2020_lephare_classic_v1.8_trim_Sfq_phot_Added.fits')  # galaxy selection already done?
+    z_keyname = 'zPDF'
+    mass_keyname = 'mass_med'
+    id_keyname = 'Id'
+    ra_key = 'ra'
+    dec_key = 'dec'
+    save_massive_catalogs = False
+    correct_masked = False
+    cat = cat[cat['mask'] == 0]  # unmasked
+    cat_gal = cat[cat['type'] == 0]  # galaxies
+
+cat_gal = cat_gal[~np.isnan(cat_gal[z_keyname])]
+cat_gal = cat_gal[~np.isnan(cat_gal[mass_keyname])]
+cat_gal = cat_gal[cat_gal[mass_keyname] > 9.0]
+cat_gal = cat_gal[cat_gal['r'] < 25]
+if sat_z_cut != 'highz':
+    cat_gal = cat_gal[cat_gal[sfq_keyname] >= 0]
+    cat_gal = cat_gal[cat_gal[sfq_keyname] <= 1]
+
 # read-in random point catalog
-if cat_type=='v8':
+if cat_type=='v9':
     cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name + '_random_point.fits')
     cat_random = cat_random[cat_random['inside'] != 0]
     cat_random_nomask = np.copy(cat_random)
     cat_random = cat_random[cat_random['MASK'] == 0]
-    cat_random_points = Table(names=('RA', 'DEC', 'GAL_ID'))   # to store position of selected random apertures
+else:
+    cat_random = Table.read('/home/lejay/random_point_cat/COSMOS2020_random_point_maskadded.fits')
+    cat_random_nomask = np.copy(cat_random)
+    cat_random = cat_random[cat_random['mask'] == 0]
 
 # ############ main loop ################
 cen_cat_dir = 'central_cat/'
+print('############ ', cat_type,  masscut_low_host, masscut_high_host)
+
 for z_bin_count, z in enumerate(z_bins):
     z = round(z, 1)
     z_bin_size = 0.3 if all_z else 0.1
-    # cat_all_z_slice = cat_gal[abs(cat_gal[z_keyname] - z) < 50]
-    cat_all_z_slice = cat_gal[cat_gal[z_keyname]<5]
+    cat_all_z_slice = cat_gal[cat_gal[z_keyname] < 5]
     cat_random_copy = np.copy(cat_random)  # reset random points catalog at each redshift
 
     # prepare directory for satellite catalogs
@@ -303,8 +325,11 @@ for z_bin_count, z in enumerate(z_bins):
 
     print('=============' + str(round(z-z_bin_size, 1)) + '<z<'+str(round(z+z_bin_size, 1))+'================')
     print(csfq, ssfq_series, masscut_low, masscut_high, masscut_low_host, 'evo_masscut =', evo_masscut)
-    cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
-    cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
+    if cen_selection == 'normal':
+        cat_massive_gal = cat_gal[np.logical_and(cat_gal[mass_keyname] > masscut_low_host, cat_gal[mass_keyname] < masscut_high_host)]
+        cat_massive_z_slice = cat_massive_gal[abs(cat_massive_gal[z_keyname] - z) < z_bin_size]
+    elif cen_selection == 'pre_select':
+        cat_massive_z_slice = Table.read('/home/lejay/catalogs/central_cat_COSMOS_deep_'+str(round(z,1))+'.fits')
     coord_massive_gal = SkyCoord(np.array(cat_massive_z_slice[ra_key]) * u.deg, np.array(cat_massive_z_slice[dec_key]) * u.deg)
     print('No. of massive gals:', len(cat_massive_z_slice))
 
@@ -335,6 +360,7 @@ for z_bin_count, z in enumerate(z_bins):
     else:
         my_cat_massive_z_slice = cat_massive_z_slice[rank * nEach:rank * nEach + nEach]
 
+    print('No. of massive gals in rank'+str(rank)+':', len(cat_massive_z_slice))
     for gal in my_cat_massive_z_slice:
         massive_count += 1
         isolation_factor = 10 ** 0
@@ -353,17 +379,10 @@ for z_bin_count, z in enumerate(z_bins):
         # prepare satellites catalog
         if isinstance(sat_z_cut, float):
             cat_neighbors_z_slice = cat_all_z_slice[abs(cat_all_z_slice[z_keyname] - gal[z_keyname]) < sat_z_cut * 0.044 * (1 + gal[z_keyname])]
-        elif sat_z_cut=='highz':
+        elif sat_z_cut == 'highz':
             cat_neighbors_z_slice = cat_all_z_slice[cat_all_z_slice[z_keyname] > 3.0]
 
-        # cut on satellite sample (mass cut, spatial cut)
-        if masscut_high > 1.0:  # fixed cut (masscut_low)
-            cat_neighbors_z_slice = cat_neighbors_z_slice[cat_neighbors_z_slice[mass_keyname] > masscut_low]
-            cat_neighbors_z_slice = cat_neighbors_z_slice[cat_neighbors_z_slice[mass_keyname] < masscut_high]
-        else:  # relative cut (masscut_low)
-            cat_neighbors_z_slice = cat_neighbors_z_slice[cat_neighbors_z_slice[mass_keyname] > gal[mass_keyname] + np.log10(masscut_low)]
-            cat_neighbors_z_slice = cat_neighbors_z_slice[cat_neighbors_z_slice[mass_keyname] < gal[mass_keyname] + np.log10(masscut_high)]
-
+        # spatial cut on satellite sample
         cat_neighbors = cat_neighbors_z_slice[abs(cat_neighbors_z_slice[ra_key] - gal[ra_key]) < radius_max * 4 / dis / np.pi * 180]
         cat_neighbors = cat_neighbors[abs(cat_neighbors[dec_key] - gal[dec_key]) < radius_max * 4 / dis / np.pi * 180] # circular aperture cut
         if len(cat_neighbors) == 0: # skip centrals that have no satellites
@@ -382,6 +401,18 @@ for z_bin_count, z in enumerate(z_bins):
 
         # isolation cut on central
         if gal[mass_keyname] < np.log10(isolation_factor) + max(cat_neighbors[mass_keyname]):  # no more-massive companions
+            print(str(gal['ID'])+'not isolated')
+            continue
+
+        # mass cut on satellite sample
+        if masscut_high > 1.0:  # fixed cut (masscut_low)
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > masscut_low]
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < masscut_high]
+        else:  # relative cut (masscut_low)
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] > gal[mass_keyname] + np.log10(masscut_low)]
+            cat_neighbors = cat_neighbors[cat_neighbors[mass_keyname] < gal[mass_keyname] + np.log10(masscut_high)]
+        if len(cat_neighbors) == 0: # skip centrals that have no satellites
+            print('No Satellite for', gal[id_keyname])
             continue
 
         # evo mass cut
@@ -391,7 +422,7 @@ for z_bin_count, z in enumerate(z_bins):
         # cut on central SF/Q
         if csfq == 'csf' and gal[sfq_keyname] < 0.5:  # Q
             continue
-        elif csfq == 'cq' and gal[sfq_keyname] > 0.5:  # SF
+        elif csfq == 'cq' and gal[sfq_keyname] >= 0.5:  # SF
             continue
 
         # skip centrals with no satellite within mass range
@@ -467,7 +498,6 @@ for z_bin_count, z in enumerate(z_bins):
             isolated_cat.write(cen_cat_dir+'isolated_'+cat_name+'_'+str(sat_z_cut)+'_'+str(masscut_low_host)+'_'+z_output+'_'+str(rank)+'_massive.positions.fits', overwrite=True)
     print('Finished gals: ' + str(isolated_counts) + '/' + str(len(my_cat_massive_z_slice)), 'in rank '+str(rank))
     print('Finished bkgs: ' + str(bkg_count), 'in rank '+str(rank))
-    # cat_random_points.write('random_points_' + cat_name + '_' + str(z) + '.fits', overwrite=True)
 
     # writing results into files
     radial_dist_series = [radial_dist, radial_dist_ssf, radial_dist_sq]  # raw numbers (not corrected for completeness and mask)
@@ -492,10 +522,6 @@ for z_bin_count, z in enumerate(z_bins):
         result = np.append([n_central], [n_count, n_err])
 
         # separate sat/bkg number density errors and results
-        # print(radial_dist_series[i] * areas)
-        # print(radial_dist_bkg_series[i]*areas)
-        # print(isolated_counts, bkg_count)
-
         if isolated_counts>0 and bkg_count>0:
             n_sat_err = cal_error_sat(radial_dist_series[i] * areas, isolated_counts, spatial_weight)/ areas
             n_bkg_err = cal_error_bkg(radial_dist_bkg_series[i] * areas, bkg_count, spatial_weight)/ areas
