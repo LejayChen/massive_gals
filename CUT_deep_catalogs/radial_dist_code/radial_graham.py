@@ -5,7 +5,7 @@ import astropy.units as u
 from astropy.coordinates import SkyCoord, match_coordinates_sky
 from astropy.cosmology import WMAP9
 from astropy.table import *
-from scipy import stats
+# from scipy.stats import binned_statistic
 from mpi4py import MPI
 import time
 comm=MPI.COMM_WORLD
@@ -33,7 +33,7 @@ def check_edge(ra_rand, dec_rand, dis):
 
 
 def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, mass_cen, dis):
-    
+
     cat_neighbors_z_slice_rand = cat_neighbors_z_slice_rand[cat_neighbors_z_slice_rand[mass_keyname] > masscut_low]
     cat_neighbors_z_slice_rand = cat_neighbors_z_slice_rand[cat_neighbors_z_slice_rand[mass_keyname] < masscut_high]
 
@@ -136,9 +136,6 @@ def correct_for_masked_area(ra, dec):
 
 
 def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
-    ## TEMPORARY!!! ####
-    if z>0.9:
-        z=0.8
 
     if masscut_low_comp == 9.6:
         masscut_low_comp = 9.5
@@ -156,7 +153,6 @@ def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
         spatial_weight = 1. / comp_bootstrap[:bin_number]
         spatial_weight_err = comp_bootstrap[bin_number:]/comp_bootstrap[:bin_number]**2
         return spatial_weight, spatial_weight_err
-
 
 def Ms_to_r200(log_Ms):
     M1 = 10 ** 12.52
@@ -206,7 +202,7 @@ correct_completeness = False
 correct_masked = False
 check_edge_flag = True
 save_results = True
-save_catalogs = False
+save_catalogs = True
 
 cen_selection = 'normal'  # pre_select or normal
 cat_name = sys.argv[1]  # COSMOS_deep ELAIS_deep XMM-LSS_deep DEEP_deep SXDS_uddd
@@ -231,7 +227,6 @@ except ValueError:
 
 csfq = sys.argv[8]  # csf, cq, all
 sfq_keyname = sys.argv[9]
-
 rmax = 'fixed'
 ssfq_series = ['all', 'ssf', 'sq']
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8, 1.0]
@@ -297,12 +292,14 @@ if sat_z_cut != 'highz':
     cat_gal = cat_gal[cat_gal[sfq_keyname] >= 0]
     cat_gal = cat_gal[cat_gal[sfq_keyname] <= 1]
 
-# read-in random point catalog
+# read in random point catalog
 if cat_type=='v9':
     cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name + '_random_point.fits')
-    cat_random = cat_random[cat_random['inside'] != 0]
+    cat_random = cat_random[cat_random['inside'] == 0]
+    if 'inside_j' in path:
+        cat_random = cat_random[cat_random['inside_j'] == 0]
     cat_random_nomask = np.copy(cat_random)
-    cat_random = cat_random[cat_random['MASK'] == 0]
+    cat_random = cat_random[cat_random['MASK'] != 0]
 else:
     cat_random = Table.read('/home/lejay/random_point_cat/COSMOS2020_random_point_maskadded.fits')
     cat_random_nomask = np.copy(cat_random)
@@ -360,7 +357,7 @@ for z_bin_count, z in enumerate(z_bins):
     else:
         my_cat_massive_z_slice = cat_massive_z_slice[rank * nEach:rank * nEach + nEach]
 
-    print('No. of massive gals in rank'+str(rank)+':', len(cat_massive_z_slice))
+    print('No. of massive gals in rank'+str(rank)+':', len(my_cat_massive_z_slice))
     for gal in my_cat_massive_z_slice:
         massive_count += 1
         isolation_factor = 10 ** 0
@@ -401,7 +398,6 @@ for z_bin_count, z in enumerate(z_bins):
 
         # isolation cut on central
         if gal[mass_keyname] < np.log10(isolation_factor) + max(cat_neighbors[mass_keyname]):  # no more-massive companions
-            print(str(gal['ID'])+'not isolated')
             continue
 
         # mass cut on satellite sample
@@ -440,8 +436,9 @@ for z_bin_count, z in enumerate(z_bins):
             cat_neighbors.add_columns([radius_col])
             cat_neighbors.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_sat.fits', overwrite=True)
 
-        # get mean radius value of companions in each bin and stack
-        bin_stats = stats.binned_statistic(radius_list, radius_list, statistic='mean', bins=bin_edges)
+        # get mean radius value of satellites in each bin and stack
+        # bin_stats = binned_statistic(radius_list, radius_list, statistic='mean', bins=bin_edges)
+        bin_stats = np.histogram(radius_list, weights=radius_list, bins=bin_edges)[0] / np.histogram(radius_list, bins=bin_edges)[0]
         bin_centers = bin_stats[0]
         bin_centers = np.nan_to_num(bin_centers)
         for i in range(len(bin_centers)):
@@ -485,6 +482,8 @@ for z_bin_count, z in enumerate(z_bins):
         isolated_counts += 1
         isolated_cat.add_row(gal)
         n_sat.append(sum(sat_counts))
+
+    print('rank', rank, z, sum(n_sat))
 
     # ######### Collect/Write Results ##################
     # output central catalog
