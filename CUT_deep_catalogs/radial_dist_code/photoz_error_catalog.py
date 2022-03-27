@@ -15,10 +15,11 @@ pair_sfq = sys.argv[4]
 catalog_type = sys.argv[6]  # lephare or phos
 zkeyname = sys.argv[7]
 cat_name = sys.argv[8]
-
+save_catalog=False
 ra_name = 'RA'
 dec_name = 'DEC'
 
+print('loading tables ...')
 if catalog_type == 'lephare':
     cat = Table.read('/home/lejay/catalogs/v9_cats/' + cat_name + '_v9_gal_cut_params_sfq_added.fits')
     if cat_name == 'XMM-LSS_deep':
@@ -38,12 +39,18 @@ else:
     cat = cat[cat['inside_hsc'] == True]
     cat = cat[cat['isOutsideMask'] == 1]  # unmasked
     cat_gal = cat[cat['isStar'] == 0]  # galaxies
+
     if cat_name in ['XMM-LSS_deep','COSMOS_deep']:
-        if zkeyname == 'ZPHOT_NIR' or zkeyname == 'ZPHOT_6B':
+        if zkeyname == 'ZPHOT_NIR' or zkeyname == 'ZPHOT_6B_NIRarea':
             cat_gal = cat_gal[cat_gal['ZPHOT_NIR'] > -90]  # only objects with NIR derived redshifts
     else:
         zkeyname = 'ZPHOT'
 
+if zkeyname == 'ZPHOT_6B_NIRarea':
+    zkeyname = 'ZPHOT_6B'
+    zkeyname_output = 'ZPHOT_6B_NIRarea'
+else:
+    zkeyname_output = zkeyname
 
 cat_gal = cat_gal[cat_gal[zkeyname] > 0]  # z cut
 cat_gal = cat_gal[cat_gal[zkeyname] < 7.0]  # z cut
@@ -70,8 +77,10 @@ cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name + '_random_poin
 cat_random = cat_random[cat_random['inside'] == 0]
 cat_random = cat_random[cat_random['MASK'] != 0]
 
+# aperture settings
 aper_size = 150.0  # arcsec, aperture size
 max_sep = 10.0  # arcsec, max separation for close pairs
+rand_close_ratio = 5
 
 base = 200
 if mag_faint < 23:
@@ -94,9 +103,14 @@ success = True
 deltaz_close = np.zeros(bin_number)
 deltaz_random = np.zeros(bin_number)
 deltaz_physical = np.zeros(bin_number)
-deltaz_physical = np.zeros(bin_number)
 deltaz_list_tot = []
 deltaz_list_rand_tot = []
+cat_pair_col_names = ['ID1','RA1','DEC1','z1','imag1','ID2','RA2','DEC2','z2','imag2','dz_1pz']
+cat_pair_col_dtypes = ['i8','f8','f8','f8','f8','i8','f8','f8','f8','f8','f8']
+cat_pair_col_names_rand = ['RA1','DEC1','z1','RA2','DEC2','z2','dz_1pz']
+cat_pair_col_dtypes_rand = ['f8','f8','f8','f8','f8','f8','f8']
+cat_pair_close = Table(names=cat_pair_col_names, dtype=cat_pair_col_dtypes)
+cat_pair_random = Table(names=cat_pair_col_names_rand, dtype=cat_pair_col_dtypes_rand)
 while number_pairs_count < number_pairs:
     # print(mag_bright, mag_faint, cat_name, 'number_pairs_count', number_pairs_count)
     if fails > number_pairs:
@@ -162,6 +176,7 @@ while number_pairs_count < number_pairs:
 
             # append
             deltaz_list.append(deltaz)
+            cat_pair_close.add_row([gal1['ID'], gal1['RA'], gal1['DEC'], gal1[zkeyname], gal1['i'], gal2['ID'], gal2['RA'], gal2['DEC'], gal2[zkeyname], gal2['i'], deltaz])
 
         # Nd = len(cat_neigdhbors_z)
         # fg = no_pairs/no_pairs_all
@@ -228,13 +243,16 @@ while number_pairs_count < number_pairs:
 
             # append
             deltaz_list_rand.append(deltaz)
+            if len(cat_pair_random) < rand_close_ratio * number_pairs:
+                cat_pair_random.add_row([gal1['RA'], gal1['DEC'], gal1[zkeyname], gal2['RA'], gal2['DEC'], gal2[zkeyname], deltaz])
     else:
         fails += 1
         continue
 
     # shorten length of delta_z_list_random
-    if len(deltaz_list_rand) > 10 * len(deltaz_list):
-        deltaz_list_rand = np.random.choice(deltaz_list_rand, size=10 * len(deltaz_list), replace=False)
+    deltaz_list_rand = np.array(deltaz_list_rand)
+    if len(deltaz_list_rand) > rand_close_ratio * len(deltaz_list):
+        deltaz_list_rand = np.random.choice(deltaz_list_rand, size=rand_close_ratio * len(deltaz_list), replace=False)
 
     # append deltaz_list_tot
     deltaz_list_tot += deltaz_list
@@ -254,17 +272,18 @@ while number_pairs_count < number_pairs:
 # save results
 dir_list = 'list_delta_z/'
 dir_hist = 'delta_z/'
+dir_table = '/scratch/lejay/cat_delta_z/'
 if success:
     if pair_sfq == 'all-all':
         filename_base = 'catalog_'+str(round(z_low,1))+'_'+str(round(z_high, 1))+'_'+sample_selection+'_'+\
-                str(mag_bright)+'_'+str(mag_faint)+'_'+cat_name+'_'+catalog_type+'_'+zkeyname+'_'+str(rank)
+                str(mag_bright)+'_'+str(mag_faint)+'_'+cat_name+'_'+catalog_type+'_'+zkeyname_output+'_'+str(rank)
     else:
         filename_base = 'catalog_'+str(round(z_low,1))+'_'+str(round(z_high, 1))+'_'+sample_selection+'_'+\
-                str(mag_bright)+'_'+str(mag_faint)+'_'+pair_sfq+'_'+cat_name+'_'+catalog_type+'_'+zkeyname+'_'+str(rank)
+                str(mag_bright)+'_'+str(mag_faint)+'_'+pair_sfq+'_'+cat_name+'_'+catalog_type+'_'+zkeyname_output+'_'+str(rank)
 
     # save delta_z lists (no binning)
-    print('no. of close pairs:', len(np.array(deltaz_list_tot)))
-    print('no. of random pairs:', len(np.array(deltaz_list_rand_tot)))
+    # print('no. of close pairs:', len(np.array(deltaz_list_tot)))
+    # print('no. of random pairs:', len(np.array(deltaz_list_rand_tot)))
     np.save(dir_list + filename_base + '_deltaz_list_close.npy', np.array(deltaz_list_tot))
     np.save(dir_list + filename_base + '_deltaz_list_random.npy', np.array(deltaz_list_rand_tot))
 
@@ -274,6 +293,10 @@ if success:
     np.save(dir_hist + filename_base+'_deltaz_physical.npy', deltaz_physical)
     print(filename_base + ' saved')
 
+    # save pair catalogs
+    if save_catalog ==True:
+        cat_pair_close.write(dir_table + filename_base + '_deltaz_close.fits', overwrite=True)
+        cat_pair_random.write(dir_table + filename_base + '_deltaz_random.fits', overwrite=True)
 else:
     print(cat_name, 'failed', 'rank', rank, fails)
 

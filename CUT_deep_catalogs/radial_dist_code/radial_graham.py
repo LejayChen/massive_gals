@@ -11,7 +11,8 @@ comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 nProcs = comm.Get_size()
 
-def check_edge(ra_rand, dec_rand, dis):
+
+def check_edge(ra_rand, dec_rand, dis):  # check if a galaxy is on the edge of geometry by counts in cat_random
     cat_random_cut = cat_random_copy[abs(cat_random_copy[ra_key] - ra_rand) < radius_max*4 / dis / np.pi * 180]
     cat_random_cut = cat_random_cut[abs(cat_random_cut[dec_key] - dec_rand) < radius_max*4 / dis / np.pi * 180]
     coord_random_cut = SkyCoord(np.array(cat_random_cut[ra_key]) * u.deg, np.array(cat_random_cut[dec_key]) * u.deg)
@@ -30,7 +31,7 @@ def check_edge(ra_rand, dec_rand, dis):
         return False
 
 
-def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):
+def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):  # estimate background number density
     global R_m_stack_bkg, R_u_stack_bkg, z, masscut_low, masscut_high
     flag_bkg_rand = -1
     num_before_success = 0
@@ -38,18 +39,18 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):
     counts_gals_ssf_rand = np.zeros(bin_number)
     counts_gals_sq_rand = np.zeros(bin_number)
     coord_rand_list = []
-    while flag_bkg_rand == -1:  # get several blank pointing's to estimate background
+    while flag_bkg_rand == -1:   # -1 is the initial value,  0 is sucess, 1 is not able to find clean bkg position
         id_rand = int(random() * len(cat_random_copy))
         ra_rand = cat_random_copy[id_rand][ra_key]
         dec_rand = cat_random_copy[id_rand][dec_key]
         idx, sep2d, dist3d = match_coordinates_sky(SkyCoord(ra_rand, dec_rand, unit="deg"), coord_massive_gal_rand, nthneighbor=1)
 
         num_before_success += 1
-        if num_before_success > 100:
+        if num_before_success > 100:  # not able to find clean bkg position
             flag_bkg_rand = 1
             break
 
-        if sep2d.degree > radius_max*2 / dis / np.pi * 180:  # make sure the random pointing is away from any central galaxy (blank)
+        if sep2d.degree > radius_max*2 / dis / np.pi * 180:  # make sure random pointing is away from any central (blank position)
             if check_edge_flag and check_edge(ra_rand, dec_rand, dis):
                 continue
 
@@ -60,10 +61,11 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):
             coord_neighbors_rand = SkyCoord(np.array(cat_neighbors_rand[ra_key]) * u.deg, np.array(cat_neighbors_rand[dec_key]) * u.deg)
             cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < radius_max / dis / np.pi * 180]
 
+            # mass cut
             if masscut_high > 1.0:  # fixed cut
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] > masscut_low]
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < masscut_high]
-            else:  # relative cut
+            else:                   # relative cut
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] > gal[mass_keyname] + np.log10(masscut_low)]
                 cat_neighbors_rand = cat_neighbors_rand[cat_neighbors_rand[mass_keyname] < gal[mass_keyname] + np.log10(masscut_high)]
 
@@ -75,7 +77,7 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):
             if ('all' in ssfq_series) and save_catalogs:
                 radius_col_rand = Column(data=radius_neighbors_rand, name='radius', dtype='i4')
                 cat_neighbors_rand.add_columns([radius_col_rand])
-                #cat_neighbors_rand.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_bkg.fits', overwrite=True)
+                cat_neighbors_rand.write(sat_cat_dir + cat_name + '_' + str(gal[id_keyname]) + '_bkg.fits', overwrite=True)
 
             # radial distribution of bkg objects
             if len(radius_neighbors_rand) != 0:
@@ -85,18 +87,21 @@ def bkg(cat_neighbors_z_slice_rand, coord_massive_gal_rand, dis):
                 counts_gals_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_rand), bins=bin_edges)[0]  # smoothed background, assuming bkg is uniform
                 counts_gals_ssf_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_ssf_rand), bins=bin_edges)[0]
                 counts_gals_sq_rand += np.histogram(radius_neighbors_rand, weights=np.array(sfq_weights_sq_rand), bins=bin_edges)[0]
+
+                # correction from masking
                 R_m, R_u = correct_for_masked_area(ra_rand, dec_rand)
                 R_m_stack_bkg += R_m
                 R_u_stack_bkg += R_u
+
             else:
                 counts_gals_rand += np.zeros(bin_number)
 
             coord_rand_list.append(coord_rand)
             flag_bkg_rand = 0
 
-    if flag_bkg_rand ==0:
+    if flag_bkg_rand ==0:  # success
         return coord_rand_list, counts_gals_rand, counts_gals_ssf_rand, counts_gals_sq_rand, flag_bkg_rand, cat_neighbors_rand
-    else:
+    else:  # no success
         return coord_rand_list, counts_gals_rand, counts_gals_ssf_rand, counts_gals_sq_rand, flag_bkg_rand, 0
 
 
@@ -143,7 +148,7 @@ def spatial_comp(z, masscut_low_comp, masscut_high_comp, ssfq):
                                        str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
     else:
         comp_bootstrap = np.genfromtxt(path_curve + 'comp_radial_3.0_all_' + ssfq + '_' + 'sfProb_nuvrk' + '_inside_j_' + str(masscut_low_comp) + '_' + str(masscut_high_comp) + '_' +
-            str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
+                                       str(round(z - 0.1, 1)) + '_' + str(round(z + 0.1, 1)) + '.txt')
     spatial_weight = 1. / comp_bootstrap[:bin_number]
     spatial_weight_err = comp_bootstrap[bin_number:]/comp_bootstrap[:bin_number]**2
     return spatial_weight, spatial_weight_err
@@ -193,24 +198,27 @@ all_z = False
 correct_masked = True
 check_edge_flag = True
 save_results = True
-save_catalogs = True
+save_catalogs = False
+
 cen_selection = 'normal'  # pre_select or normal
+rmax = 'fixed'
 cat_name = sys.argv[1]  # COSMOS_deep ELAIS_deep XMM-LSS_deep DEEP_deep
 path = sys.argv[3]
 masscut_low = float(sys.argv[4])
 masscut_high = float(sys.argv[5])
-rmax = 'fixed'
 csfq = sys.argv[8]  # csf, cq, all
 sfq_keyname = sys.argv[9]
 ssfq_series = ['all', 'ssf', 'sq']
 z_bins = [0.6] if all_z else [0.4, 0.6, 0.8, 1.0]
 bin_number = int(sys.argv[11])
+moving_sig_z = bool(int(sys.argv[13]))
+bkg_count_multiplier = int(sys.argv[14])
+
 if masscut_high > 1.0:
     correct_completeness = bool(int(sys.argv[12]))
 else:
     correct_completeness=False
-moving_sig_z = bool(int(sys.argv[13]))
-bkg_count_multiplier = int(sys.argv[14])
+
 if not moving_sig_z:
     sigma_z_list = np.repeat(0.044, 4)  # sigma_z/(1+z)
 else:
@@ -259,7 +267,7 @@ else:
 
 cat_type = sys.argv[10]
 if cat_type == 'v9':
-    cat = Table.read('/home/lejay/catalogs/v9_cats/' + cat_name + '_v9_gal_cut_params_sfq_added.fits')  # galaxy selection already done?
+    cat = Table.read('/home/lejay/catalogs/v9_cats/' + cat_name + '_v9_gal_cut_params_sfq_added_v11_6b.fits')  # galaxy selection already done?
     z_keyname = 'ZPHOT'
     mass_keyname = 'MASS_MED'
     id_keyname = 'ID'
@@ -320,6 +328,7 @@ cen_cat_dir = 'central_cat/'
 print('############ ', cat_type,  masscut_low_host, masscut_high_host)
 for z_bin_count, z in enumerate(z_bins):
     z = round(z, 1)
+    print(z)
     sigma_z = sigma_z_list[z_bin_count]
     z_bin_size = 0.3 if all_z else 0.1
     cat_all_z_slice = cat_gal[cat_gal[z_keyname] < 5]  # remove unreasonable redshifts (very high redshifts)

@@ -12,6 +12,7 @@ zkeyname=sys.argv[7]
 cat_name=sys.argv[8]
 nProcs = 10
 
+print('stacking ...')
 if sample_selection == 'mag':
     z_low = 0.0
     z_high = 7.0
@@ -43,15 +44,15 @@ for pair_type in ['close', 'random', 'physical']:
 
     for rank in range(nProcs):
         # stack deltaz_lists
-        try:
-            pair_list_rank = np.load(dir_list + filename_base + '_' + str(rank) + '_deltaz_list_' + pair_type + '.npy') # unbinned raw data
-            print(len(pair_list_rank),dir_list + filename_base + '_' + str(rank) + '_deltaz_list_' + pair_type + '.npy')
-            if rank == 0:
-                pair_list_stack = pair_list_rank.tolist()
-            else:
-                pair_list_stack += pair_list_rank.tolist()
-        except FileNotFoundError:
-            print(cat_name, mag_bright, mag_faint, rank, 'File not found.')
+        if pair_type != 'physical':
+            try:
+                pair_list_rank = np.load(dir_list + filename_base + '_' + str(rank) + '_deltaz_list_' + pair_type + '.npy') # unbinned raw data
+                if rank == 0:
+                    pair_list_stack = pair_list_rank.tolist()
+                else:
+                    pair_list_stack += pair_list_rank.tolist()
+            except FileNotFoundError:
+                print(cat_name, mag_bright, mag_faint, rank, pair_type, 'deltaz list not found.')
 
         # stack histograms
         try:
@@ -61,12 +62,16 @@ for pair_type in ['close', 'random', 'physical']:
             else:
                 pair_hist_stack += pair_hist_rank
         except FileNotFoundError:
-            print(cat_name, mag_bright, mag_faint, rank, 'File not found.')
+            print(cat_name, mag_bright, mag_faint, rank, pair_type, 'deltaz histogram not found.')
 
+    if pair_type != 'physical':
+        np.save(dir_list + filename_base + '_deltaz_list_' + pair_type + '.npy', pair_list_stack)
+        print(dir_list + filename_base + '_deltaz_list_' + pair_type + '.npy saved.' )
     pair_hist_stack = pair_hist_stack / nProcs
-    np.save(dir_list + filename_base + '_deltaz_list_' + pair_type + '.npy', pair_list_stack)
     np.save(dir_hist + filename_base + '_deltaz_' + pair_type + '.npy', pair_hist_stack)
+    print(dir_hist + filename_base + '_deltaz_' + pair_type + '.npy saved.')
 
     # remove temporary files
-    os.system('rm ' + dir_list + filename_base + '_[0-9]_deltaz_list_' + pair_type + '.npy')
+    if pair_type != 'physical':
+        os.system('rm ' + dir_list + filename_base + '_[0-9]_deltaz_list_' + pair_type + '.npy')
     os.system('rm ' + dir_hist + filename_base + '_[0-9]_deltaz_'+pair_type+'.npy')

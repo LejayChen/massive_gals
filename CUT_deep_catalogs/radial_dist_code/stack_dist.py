@@ -31,8 +31,7 @@ print('stacking ... ')
 for z in ['0.4', '0.6', '0.8', '1.0']:  # stack radial number density results
     for ssfq in ['ssf','sq','all']:
         for result_type in ['', '_sat', '_bkg']:
-            file_name_base = path + 'count'+cat_name+result_type+'_'+sat_z_cut+'_'+str(masscut_low)+'_'+\
-                             str(masscut_high)+'_'+str(csfq)+'_'+str(ssfq)+'_'+z
+            file_name_base = path + 'count'+cat_name+result_type+'_'+sat_z_cut+'_'+str(masscut_low)+'_'+str(masscut_high)+'_'+str(csfq)+'_'+str(ssfq)+'_'+z
             radial_tot = np.zeros(bin_number)
             radial_tot_err = np.zeros(bin_number)
             n_gals_tot = 0
