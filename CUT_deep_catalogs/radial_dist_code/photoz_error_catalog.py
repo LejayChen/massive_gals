@@ -82,7 +82,7 @@ aper_size = 150.0  # arcsec, aperture size
 max_sep = 10.0  # arcsec, max separation for close pairs
 rand_close_ratio = 5
 
-base = 200
+base = 20
 if mag_faint < 23:
     number_pairs = 4*base
     bin_number = 220
@@ -105,10 +105,16 @@ deltaz_random = np.zeros(bin_number)
 deltaz_physical = np.zeros(bin_number)
 deltaz_list_tot = []
 deltaz_list_rand_tot = []
-cat_pair_col_names = ['ID1','RA1','DEC1','z1','imag1','ID2','RA2','DEC2','z2','imag2','dz_1pz']
-cat_pair_col_dtypes = ['i8','f8','f8','f8','f8','i8','f8','f8','f8','f8','f8']
-cat_pair_col_names_rand = ['RA1','DEC1','z1','RA2','DEC2','z2','dz_1pz']
-cat_pair_col_dtypes_rand = ['f8','f8','f8','f8','f8','f8','f8']
+if cat_name in ['COSMOS_deep', 'XMM-LSS_deep']:
+    cat_pair_col_names = ['ID1','RA1','DEC1','z1_NIR','z1_6B','imag1','ID2','RA2','DEC2','z2_NIR','z2_6B','imag2','dz_1pz']
+    cat_pair_col_dtypes = ['i8','f8','f8','f8','f8','f8','i8','f8','f8','f8','f8','f8','f8']
+    cat_pair_col_names_rand = ['RA1','DEC1','z1_NIR','z1_6B','RA2','DEC2','z2_NIR','z2_6B','dz_1pz']
+    cat_pair_col_dtypes_rand = ['f8','f8','f8','f8','f8','f8','f8','f8','f8']
+else:
+    cat_pair_col_names = ['ID1','RA1','DEC1','z1','imag1','ID2','RA2','DEC2','z2','imag2','dz_1pz']
+    cat_pair_col_dtypes = ['i8','f8','f8','f8','f8','i8','f8','f8','f8','f8','f8']
+    cat_pair_col_names_rand = ['RA1','DEC1','z1','RA2','DEC2','z2','dz_1pz']
+    cat_pair_col_dtypes_rand = ['f8','f8','f8','f8','f8','f8','f8']
 cat_pair_close = Table(names=cat_pair_col_names, dtype=cat_pair_col_dtypes)
 cat_pair_random = Table(names=cat_pair_col_names_rand, dtype=cat_pair_col_dtypes_rand)
 while number_pairs_count < number_pairs:
@@ -176,7 +182,11 @@ while number_pairs_count < number_pairs:
 
             # append
             deltaz_list.append(deltaz)
-            cat_pair_close.add_row([gal1['ID'], gal1['RA'], gal1['DEC'], gal1[zkeyname], gal1['i'], gal2['ID'], gal2['RA'], gal2['DEC'], gal2[zkeyname], gal2['i'], deltaz])
+            if cat_name in ['COSMOS_deep','XMM-LSS_deep']:
+                cat_pair_close.add_row([gal1['ID'], gal1['RA'], gal1['DEC'], gal1['ZPHOT_NIR'],gal1['ZPHOT_6B'], gal1['i'], gal2['ID'], gal2['RA'], gal2['DEC'], gal2['ZPHOT_NIR'],gal2['ZPHOT_6B'], gal2['i'], deltaz])
+            else:
+                cat_pair_close.add_row(
+                    [gal1['ID'], gal1['RA'], gal1['DEC'], gal1[zkeyname], gal1['i'], gal2['ID'], gal2['RA'],gal2['DEC'], gal2[zkeyname], gal2['i'], deltaz])
 
         # Nd = len(cat_neigdhbors_z)
         # fg = no_pairs/no_pairs_all
@@ -199,7 +209,12 @@ while number_pairs_count < number_pairs:
 
     # randomly replace redshifts from data catalog
     cat_random_select = np.random.choice(cat_gal, size=len(cat_neighbors_rand))
-    cat_neighbors_rand[zkeyname] = cat_random_select[zkeyname]
+    if cat_name in ['COSMOS_deep', 'XMM-LSS_deep']:
+        cat_neighbors_rand['ZPHOT_NIR'] = cat_random_select['ZPHOT_NIR']
+        cat_neighbors_rand['ZPHOT_6B'] = cat_random_select['ZPHOT_6B']
+    else:
+        cat_neighbors_rand[zkeyname] = cat_random_select[zkeyname]
+
     if pair_sfq != 'all-all':
         cat_neighbors_rand['sfProb_nuvrk'] = cat_random_select['sfProb_nuvrk']
 
@@ -244,7 +259,10 @@ while number_pairs_count < number_pairs:
             # append
             deltaz_list_rand.append(deltaz)
             if len(cat_pair_random) < rand_close_ratio * number_pairs:
-                cat_pair_random.add_row([gal1['RA'], gal1['DEC'], gal1[zkeyname], gal2['RA'], gal2['DEC'], gal2[zkeyname], deltaz])
+                if cat_name in ['COSMOS_deep','XMM-LSS_deep']:
+                    cat_pair_random.add_row([gal1['RA'], gal1['DEC'], gal1['ZPHOT_NIR'],gal1['ZPHOT_6B'], gal2['RA'], gal2['DEC'], gal2['ZPHOT_NIR'], gal2['ZPHOT_6B'], deltaz])
+                else:
+                    cat_pair_random.add_row([gal1['RA'], gal1['DEC'], gal1[zkeyname], gal2['RA'], gal2['DEC'], gal2[zkeyname], deltaz])
     else:
         fails += 1
         continue
