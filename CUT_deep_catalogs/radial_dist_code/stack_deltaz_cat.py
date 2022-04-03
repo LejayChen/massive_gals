@@ -41,16 +41,18 @@ if pair_sfq == 'all-all':
 else:
     filename_base = filename_base_base + pair_sfq + '_' + cat_name + '_' + catalog_type + '_' + zkeyname
 
-
+# stack
 for pair_type in ['close', 'random']:
     for rank_photoz_run in range(nProcs_photoz_run):
         cat_to_stack = Table.read(filename_base+'_'+str(rank_photoz_run)+'_deltaz_'+pair_type+'.fits')
-        if rank_photoz_run ==0:
+        print(pair_type, mag_bright, mag_faint, rank_photoz_run, len(cat_to_stack))
+        if rank_photoz_run == 0:
             cat_stacked = cat_to_stack
         else:
-            vstack([cat_stacked, cat_to_stack])
+            cat_stacked = vstack([cat_stacked, cat_to_stack])
 
     cat_stacked.write(filename_base+'_'+pair_type+'.fits', overwrite=True)
+    print('cat stacked', len(cat_stacked))
 
     # remove temporary files
     os.system('rm '+filename_base+'_[0-9]_deltaz_'+pair_type+'.fits')

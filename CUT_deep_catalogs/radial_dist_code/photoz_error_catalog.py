@@ -5,6 +5,7 @@ from astropy.coordinates import SkyCoord, search_around_sky
 from astropy.table import *
 from mpi4py import MPI
 
+
 comm=MPI.COMM_WORLD
 rank = comm.Get_rank()
 nProcs = comm.Get_size()
@@ -15,7 +16,7 @@ pair_sfq = sys.argv[4]
 catalog_type = sys.argv[6]  # lephare or phos
 zkeyname = sys.argv[7]
 cat_name = sys.argv[8]
-save_catalog=False
+save_catalog = True
 ra_name = 'RA'
 dec_name = 'DEC'
 
@@ -82,9 +83,9 @@ aper_size = 150.0  # arcsec, aperture size
 max_sep = 10.0  # arcsec, max separation for close pairs
 rand_close_ratio = 5
 
-base = 20
+base = 100
 if mag_faint < 23:
-    number_pairs = 4*base
+    number_pairs = 5*base
     bin_number = 220
 elif mag_faint < 25:
     number_pairs = 10*base
@@ -93,7 +94,7 @@ elif mag_faint < 26:
     number_pairs = 40*base
     bin_number = 130
 else:
-    number_pairs = 150*base
+    number_pairs = 130*base
     bin_number = 120
 
 i = 0
@@ -180,14 +181,20 @@ while number_pairs_count < number_pairs:
             gal2 = cat_neighbors[gal2_list[k]]
             deltaz = (gal1[zkeyname]-gal2[zkeyname]) / (1+(gal1[zkeyname]+gal2[zkeyname])/2)
 
+            rand_num = np.random.randint(2)
+            if rand_num == 1:
+                gal_temp = gal1
+                gal1 = gal2
+                gal2 = gal_temp
+
             # append
             deltaz_list.append(deltaz)
             if cat_name in ['COSMOS_deep','XMM-LSS_deep']:
                 cat_pair_close.add_row([gal1['ID'], gal1['RA'], gal1['DEC'], gal1['ZPHOT_NIR'],gal1['ZPHOT_6B'], gal1['i'], gal2['ID'], gal2['RA'], gal2['DEC'], gal2['ZPHOT_NIR'],gal2['ZPHOT_6B'], gal2['i'], deltaz])
             else:
-                cat_pair_close.add_row(
-                    [gal1['ID'], gal1['RA'], gal1['DEC'], gal1[zkeyname], gal1['i'], gal2['ID'], gal2['RA'],gal2['DEC'], gal2[zkeyname], gal2['i'], deltaz])
+                cat_pair_close.add_row([gal1['ID'], gal1['RA'], gal1['DEC'], gal1[zkeyname], gal1['i'], gal2['ID'], gal2['RA'],gal2['DEC'], gal2[zkeyname], gal2['i'], deltaz])
 
+        # Nd = len(cat_neigdhbors_z)
         # Nd = len(cat_neigdhbors_z)
         # fg = no_pairs/no_pairs_all
         # fz = 2
@@ -254,11 +261,18 @@ while number_pairs_count < number_pairs:
         for k in range(len(gal1_list)):
             gal1 = cat_neighbors_z_rand[gal1_list[k]]
             gal2 = cat_neighbors_rand[gal2_list[k]]
+
+            rand_num = np.random.randint(2)
+            if rand_num == 1:
+                gal_temp = gal1
+                gal1 = gal2
+                gal2 = gal_temp
+
             deltaz = (gal1[zkeyname] - gal2[zkeyname]) / (1 + (gal1[zkeyname] + gal2[zkeyname]) / 2)
 
             # append
             deltaz_list_rand.append(deltaz)
-            if len(cat_pair_random) < rand_close_ratio * number_pairs:
+            if len(cat_pair_random) < rand_close_ratio * len(deltaz_list):
                 if cat_name in ['COSMOS_deep','XMM-LSS_deep']:
                     cat_pair_random.add_row([gal1['RA'], gal1['DEC'], gal1['ZPHOT_NIR'],gal1['ZPHOT_6B'], gal2['RA'], gal2['DEC'], gal2['ZPHOT_NIR'], gal2['ZPHOT_6B'], deltaz])
                 else:
@@ -312,7 +326,7 @@ if success:
     print(filename_base + ' saved')
 
     # save pair catalogs
-    if save_catalog ==True:
+    if save_catalog:
         cat_pair_close.write(dir_table + filename_base + '_deltaz_close.fits', overwrite=True)
         cat_pair_random.write(dir_table + filename_base + '_deltaz_random.fits', overwrite=True)
 else:
