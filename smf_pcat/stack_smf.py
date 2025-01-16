@@ -4,7 +4,7 @@ import os
 import time
 
 cat_names = ['COSMOS_deep','DEEP_deep','ELAIS_deep','XMM-LSS_deep']
-cores_per_cat = 32 // len(cat_names)
+cores_per_cat = 36 // len(cat_names)
 
 ssfq = sys.argv[1]
 z_min = sys.argv[2]
@@ -60,12 +60,12 @@ for cat_name in cat_names:
         # os.system('rm ' + scratch_path + file_name_base + '_[0-9].npy')  # remove temporary files
 
     # stack central mass list
-    if ssfq == 'all':
-        cen_mass_list_stack = np.array([])
-        file_name_base_cen =  str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + z_min 
-        for i in range(cores_per_cat):
-            cen_mass_list = np.load(scratch_path + cat_name + '_'+ file_name_base_cen + '_cen_mass_' + str(i) + '.npy')
-            cen_mass_list_stack = np.append(cen_mass_list_stack,cen_mass_list)
-        np.save(path + cat_name + '_cen_masslist_' + str(masscut_host) + '_'+ file_name_base_cen + '.npy', cen_mass_list_stack)
+    # if ssfq == 'all':
+    #     cen_mass_list_stack = np.array([])
+    #     file_name_base_cen =  str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + z_min 
+    #     for i in range(cores_per_cat):
+    #         cen_mass_list = np.load(scratch_path + cat_name + '_'+ file_name_base_cen + '_cen_mass_' + str(i) + '.npy')
+    #         cen_mass_list_stack = np.append(cen_mass_list_stack,cen_mass_list)
+    #     np.save(path + cat_name + '_cen_masslist_' + str(masscut_host) + '_'+ file_name_base_cen + '.npy', cen_mass_list_stack)
         # os.system('rm ' + scratch_path + cat_name + '_'+ file_name_base_cen + '_cen_mass_[0-9].npy')  # remove temporary files
 

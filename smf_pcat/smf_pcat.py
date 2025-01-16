@@ -72,7 +72,7 @@ def bkg(cat_random_bkg_pos, cat_neighbors_z_slice_rand, coord_isolated_gal_rand,
             if len(cat_neighbors_rand) == 0:
                 continue
                 # counts_gals_rand += np.zeros(bin_number)
-            # elif max(mass_neighbors_rand)>masscut_host:
+            # elif max(cat_neighbors_rand[mass_keyname])>masscut_host:
             #     continue
             else:
                 mass_neighbors_rand = cat_neighbors_rand[mass_keyname]
@@ -148,6 +148,18 @@ def completeness_est(mass_list, sfProb_list, z):
     except:
         return np.ones(len(mass_list))
 
+def Ms_to_r200(log_Ms): 
+    M1 = 10 ** 12.52 # solar masses
+    Ms = 10**log_Ms # solar masses
+    Ms0 = 10 ** 10.916 # solar masses
+    beta = 0.457
+    delta = 0.566
+    gamma = 1.53
+    rho_bar = 9.9e-30  # g/cm^3
+    log_mh = np.log10(M1) + beta * np.log10(Ms / Ms0) + (Ms / Ms0) ** delta / (1 + (Ms / Ms0) ** (-1 * gamma)) - 0.5 # Leauthaud+2012
+    r200 = ((3*10**log_mh*1.989e30*1e3)/(800*np.pi*rho_bar))**(1/3)/3.086e21 # in kpc
+    return r200/1000  # in Mpc
+
 # multi-threading settings
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
@@ -161,7 +173,7 @@ all_z = False
 correct_masked = True
 save_results = True
 save_catalogs = False
-rel_scale = False # relative scale
+small_size_test = True
 
 ssfq = sys.argv[1]
 z_min = eval(sys.argv[2])
@@ -175,27 +187,36 @@ sigma_z = 0.06
 masscut_low = eval(sys.argv[7])
 masscut_high = 13.0
 masscut_host = eval(sys.argv[8])
+masscut_host_high = eval(sys.argv[9])
 bin_edges = np.linspace(masscut_low, masscut_high, num=bin_number+1)
 rel_bin_edges = np.linspace(-4, 0, num=bin_number+1)
 
 
 sat_z_cut = 3.0
-overlapping_factor = eval(sys.argv[9]) # closest distance factor a random position is to a massive galaxy (1=r_iso)
-csfq = sys.argv[10]  # csf, cq, all
+overlapping_factor = eval(sys.argv[10]) # closest distance factor a random position is to a massive galaxy (1=r_iso)
+csfq = sys.argv[11]  # csf, cq, all
 
 # radius of counting satellites
-r_low = eval(sys.argv[11])  # Mpc
-r_high = eval(sys.argv[12])  # Mpc
+r_low = eval(sys.argv[12])  # Mpc
+r_high = eval(sys.argv[13])  # Mpc
 r_iso = r_high  # Mpc (isolation criteria radius)
+
+overlap_exclude = bool(eval(sys.argv[14]))
+rel_scale = bool(eval(sys.argv[15])) # relative mass scale
+rel_riso = bool(eval(sys.argv[16])) # relative aperture size
+
+print('relative scales status', rel_scale, rel_riso)
+
+if not overlap_exclude:
+    overlapping_factor = 0.0
 
 if path[-1] != '/' and save_results:
     raise NameError('path is not a directory!')
 elif save_results:
     print('will save results to ' + scratch_path)
-    if not os.path.exists(scratch_path):
-        os.system('mkdir '+scratch_path)
 else:
     print('will NOT save results!')
+
 
 cat_names = ['COSMOS_deep','DEEP_deep','ELAIS_deep','XMM-LSS_deep']
 cat_name = cat_names[rank % len(cat_names)]
@@ -228,7 +249,8 @@ cat_gal = cat[cat['i_cmodel']>0]
 cat_gal = cat_gal[cat_gal[zkeyname] < 2.0]
 cat_gal = cat_gal[cat_gal[sfq_keyname] >= 0.0]
 cat_gal = cat_gal[cat_gal[sfq_keyname] <= 1.0]
-cat_gal = cat_gal[cat_gal[mass_keyname] > masscut_low]
+cat_gal = cat_gal[cat_gal[mass_keyname] >= masscut_low]
+cat_gal = cat_gal[cat_gal[mass_keyname] < masscut_high]
 
 # read in random point catalog
 cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name + '_random_point.fits')
@@ -248,7 +270,7 @@ print(z_min,z_max)
 print(cat_name,rank_in_cat,len(cat_gal))
 del cat
 
-# bootstrap resampling
+#bootstrap resampling
 smf_dist_arr = np.zeros(bin_number)
 smf_dist_bkg_arr = np.zeros(bin_number)
 mass_key_ori = cat_gal[mass_keyname].copy()  # original
@@ -258,7 +280,7 @@ isolated_counts_ori = 0
 count_bkg_ori = 0
 for boot_iter in range(boot_num):
     print('')
-    print('boot_iter '+str(boot_iter)+' started.')
+    print(cat_name, 'boot_iter '+str(boot_iter)+' started.')
     
     if boot_iter > 0:  # number of iteration of bootstrapping
         cat_gal[mass_keyname] = mass_key_ori
@@ -275,47 +297,52 @@ for boot_iter in range(boot_num):
         cat_gal_copy = cat_gal
 
     # select massive galaxies
-    cat_massive_gal = cat_gal_copy[cat_gal_copy[mass_keyname] > masscut_host]
+    cat_massive_gal = cat_gal_copy[np.logical_and(cat_gal_copy[mass_keyname] > masscut_host, cat_gal_copy[mass_keyname] < masscut_host_high)]
     cat_massive_z_slice = cat_massive_gal[np.logical_and(cat_massive_gal[zkeyname]>z_min, cat_massive_gal[zkeyname]<z_max)]
-    # cat_massive_z_slice = cat_massive_z_slice[:int(len(cat_massive_z_slice)/10)] # only use part of massive gals for test
-    print('massive gals rank_in_cat:', rank_in_cat, len(cat_massive_z_slice))
+    print('massive gals rank_in_cat:', rank_in_cat, len(cat_massive_z_slice), max(cat_massive_z_slice[mass_keyname]))
 
-    # select isolated massive galaxies
+    #select isolated massive galaxies
     cat_random_non_proximity = cat_random_nomask.copy()
     isolated_ids = []
     for gal_idx, gal in enumerate(cat_massive_z_slice):  
+
+        if rel_riso:
+            r_high = Ms_to_r200(gal[mass_keyname])
+            r_iso =  r_high
+
         dis = cosmo.angular_diameter_distance(gal[zkeyname]).value
         coord_gal = SkyCoord(gal['RA'] * u.deg, gal['DEC'] * u.deg)
 
-        # prepare neighbors catalog
-        cat_neighbors_z_slice = cat_gal_copy[abs(cat_gal_copy[zkeyname] - gal[zkeyname]) < sat_z_cut * 0.06 * (1 + gal[zkeyname])]
-        cat_neighbors = cat_neighbors_z_slice[np.logical_and(abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 2 * r_iso / dis / np.pi * 180, abs(cat_neighbors_z_slice['DEC'] - gal['DEC']) < 2 * r_iso / dis / np.pi * 180)]
-
-        # random point catalog to select backgroun positions
-        cat_random_non_proximity = cat_random_non_proximity[np.logical_or(abs(cat_random_non_proximity['ra'] - gal['RA']) > r_iso / dis / np.pi * 180, abs(cat_random_non_proximity['dec'] - gal['DEC']) > r_iso / dis / np.pi * 180)]
+        cat_neighbors_massive = cat_massive_z_slice[np.logical_and(abs(cat_massive_z_slice['RA'] - gal['RA']) < 2 * r_iso / dis / np.pi * 180, abs(cat_massive_z_slice['DEC'] - gal['DEC']) < 2 * r_iso / dis / np.pi * 180)]
 
         # #### spatial selection
-        if len(cat_neighbors) == 0:  # central gals which has no companion
+        coord_neighbors_massive= SkyCoord(cat_neighbors_massive['RA'] * u.deg, cat_neighbors_massive['DEC'] * u.deg)
+        cat_neighbors_massive = cat_neighbors_massive[coord_neighbors_massive.separation(coord_gal).degree < r_iso / dis / np.pi * 180]
+
+        # isolation cut on central
+        if len(cat_neighbors_massive) == 0:  # central gals which has no companion
+            continue
+        elif gal[mass_keyname] < max(cat_neighbors_massive[mass_keyname]):  # no more-massive companions
             continue
         else:
-            # choose sats within r_high
-            coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
-            cat_neighbors = cat_neighbors[coord_neighbors.separation(coord_gal).degree < r_iso / dis / np.pi * 180]
-
-            # isolation cut on central
-            if len(cat_neighbors) == 0:  # central gals which has no companion
-                continue
-            elif gal[mass_keyname] < max(cat_neighbors[mass_keyname]):  # no more-massive companions
-                continue
-            else:
-                isolated_ids.append(gal_idx)
-
-                # print(gal[mass_keyname], max(cat_neighbors[mass_keyname]),'1st')
+            isolated_ids.append(gal_idx)
+            # random point catalog to select backgroun positions
+            cat_random_non_proximity = cat_random_non_proximity[np.logical_or(abs(cat_random_non_proximity['ra'] - gal['RA']) > r_iso / dis / np.pi * 180, abs(cat_random_non_proximity['dec'] - gal['DEC']) > r_iso / dis / np.pi * 180)]
 
     # isolated massive galaxy sample
     cat_isolated_z_slice = cat_massive_z_slice[isolated_ids]
     coord_isolated_gal = SkyCoord(cat_isolated_z_slice['RA'] * u.deg, cat_isolated_z_slice['DEC'] * u.deg)
-    print('isolated gals, rank_in_cat:', rank_in_cat, len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]),max(cat_isolated_z_slice[mass_keyname]))
+    print('isolated gals:', len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]), max(cat_isolated_z_slice[mass_keyname]))
+    print('cat_random_non_proximity', len(cat_random_non_proximity))
+
+    # write isolated galaxy catalog to file
+    if (rank_in_cat==0 and boot_iter == 0) and ssfq == 'all':
+        cat_isolated_z_slice.write(path + cat_name + '_cen_' + str(masscut_host) + '_' + str(round(z_min, 1))+'.fits', overwrite=True)
+
+    if small_size_test:
+        cat_isolated_z_slice_torun = cat_isolated_z_slice[np.random.choice(np.arange(len(cat_isolated_z_slice)), size=min(len(cat_isolated_z_slice),9), replace=False)]
+    else:
+        cat_isolated_z_slice_torun = cat_isolated_z_slice
 
     # split massive gal sample 
     if rank_in_cat != cores_per_cat-1:
@@ -324,6 +351,7 @@ for boot_iter in range(boot_num):
         cat_isolated_z_slice = cat_isolated_z_slice[rank_in_cat*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names))) : (rank_in_cat+1)*int(len(cat_isolated_z_slice)  /(nProcs/len(cat_names)))]
     
     print('===rank:'+str(rank)+'===rank_in_cat=' + str(rank_in_cat) + '===z_min=' + str(round(z_min, 1)) + '===z_max=' + str(round(z_max, 1))+ '====='+cat_name+'==='+str(len(cat_isolated_z_slice))+'===')
+    print('isolated gals, rank_in_cat:', rank_in_cat, len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]),max(cat_isolated_z_slice[mass_keyname]))
 
     # CORE CALCULATION
     isolated_counts = 0
@@ -331,7 +359,11 @@ for boot_iter in range(boot_num):
     smf_dist_bkg = np.zeros(bin_number)
     mass_centrals = []
     count_bkg = 0
-    for gal in cat_isolated_z_slice:  # [np.random.randint(len(cat_isolated_z_slice), size=300)]:
+    for gal in cat_isolated_z_slice_torun:  # [np.random.randint(len(cat_isolated_z_slice), size=300)]:
+
+        if rel_riso:
+            r_high = Ms_to_r200(gal[mass_keyname])
+            r_iso =  r_high
 
         # cut on central SF/Q
         if csfq != 'all':
@@ -360,12 +392,6 @@ for boot_iter in range(boot_num):
             if len(cat_neighbors) == 0:  # central gals which has no companion
                 continue
 
-        # cut on companion sample (cut the final sample)
-        cat_neighbors = cat_neighbors[np.logical_and(cat_neighbors[mass_keyname] > masscut_low, cat_neighbors[mass_keyname] < masscut_high)]
-        mass_neighbors = cat_neighbors[mass_keyname]
-        if len(cat_neighbors) == 0:  # central gals which has no companion
-            continue
-
         # statistics #
         isolated_counts += 1
         mass_centrals.append(gal[mass_keyname])
@@ -377,11 +403,11 @@ for boot_iter in range(boot_num):
         else:
             sfq_weights = 1 - cat_neighbors[sfq_keyname] 
 
-        
         # sat_weights = np.array(sfq_weights/completeness_est(mass_neighbors, cat_neighbors[sfq_keyname], z))
         sat_weights = np.array(sfq_weights)
 
         #absolute / relative mass scale
+        mass_neighbors = cat_neighbors[mass_keyname]
         if not rel_scale:
             count_binned = np.histogram(mass_neighbors, weights=sat_weights, bins=bin_edges)[0]
         else:
@@ -390,12 +416,17 @@ for boot_iter in range(boot_num):
 
         sat_counts = np.array(count_binned, dtype='f8')
         smf_dist += sat_counts 
+        # print(gal['ID'],sum(sat_counts), gal[mass_keyname], max(cat_neighbors[mass_keyname]))
 
-        sat_bkg, flag_bkg = bkg(cat_random_non_proximity, cat_neighbors_z_slice, coord_isolated_gal, gal[mass_keyname], count_bkg)
+        if overlap_exclude:
+            sat_bkg, flag_bkg = bkg(cat_random_non_proximity, cat_neighbors_z_slice, coord_isolated_gal, gal[mass_keyname], count_bkg)
+        else:
+            sat_bkg, flag_bkg = bkg(cat_random_nomask, cat_neighbors_z_slice, coord_isolated_gal, gal[mass_keyname], count_bkg)
+
         if flag_bkg == 0:  # success
             count_bkg += 1
             smf_dist_bkg += sat_bkg
-            print(gal['ID'],sum(sat_counts), gal[mass_keyname],max(cat_neighbors[mass_keyname]), sum(sat_bkg))
+            # print(gal['ID'],sum(sat_counts), gal[mass_keyname],max(cat_neighbors[mass_keyname]), sum(sat_bkg))
 
     # add results from this bootstrap iteration
     print('bkg/central counts', count_bkg, isolated_counts, len(cat_isolated_z_slice))
@@ -431,7 +462,10 @@ smf_dist_sat_avg_error = [smf_dist_sat_avg, smf_dist_sat_inf, smf_dist_sat_sup]
 # output result to file
 smf_dist_cen_tot = np.histogram(mass_centrals, bins=bin_edges)[0]
 if len(mass_centrals) == isolated_counts and save_results:
-    filename = scratch_path + 'smf_' + cat_name + '_cen_' + str(masscut_host) + '_' + str(r_low) + '_' + str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z_min, 1))
+    if not rel_riso:
+        filename = scratch_path + 'smf_' + cat_name + '_cen_' + str(masscut_host) + '_' + str(r_low) + '_' + str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z_min, 1))
+    else:
+        filename = scratch_path + 'smf_' + cat_name + '_cen_' + str(masscut_host) + '_rel_mscale_' + str(r_low) + '_r200_' + str(masscut_low) + '_' + str(csfq) + '_' + str(ssfq) + '_' + str(round(z_min, 1))
     print(filename)
 
     print(rank_in_cat,'avg number total', ssfq, round(sum(smf_dist_avg)/isolated_counts))
@@ -458,18 +492,18 @@ if len(mass_centrals) == isolated_counts and save_results:
     np.save(filename + '_sat_'+str(rank_in_cat), smf_dist_sat_avg)
 
     # save central gal list
-    if ssfq == 'all':
-        np.save(scratch_path + cat_name + '_' + str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(round(z_min, 1)) + '_cen_mass_'+str(rank_in_cat), np.array(mass_centrals))
+    # if ssfq == 'all':
+    #     np.save(scratch_path + cat_name + '_' + str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + str(round(z_min, 1)) + '_cen_mass_'+str(rank_in_cat), np.array(mass_centrals))
 
     if not rel_scale:
         np.save(scratch_path + 'bin_edges', bin_edges)
         # np.save(filename + '_cen', [smf_dist_cen_tot, isolated_counts])
     else:
-        np.save(scratch_path + 'bin_edges', rel_bin_edges)
+        np.save(scratch_path + 'rel_bin_edges', rel_bin_edges)
 
     
 elif not save_results:
     print('isolated counts', isolated_counts, 'bkg counts', count_bkg)
 else:
-    print(len(mass_centrals), isolated_counts, 'Warning: wrong numbers! (Results not saved)')
+    print(len(mass_centrals), max(mass_centrals), isolated_counts, 'Warning: wrong numbers! (Results not saved)')
 
