@@ -57,8 +57,13 @@ def bkg(cat_random_bkg_pos, cat_neighbors_z_slice_rand, coord_isolated_gal_rand,
             if check_edge(ra_rand, dec_rand):
                 continue
 
-            cat_neighbors_rand = cat_neighbors_z_slice_rand[abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < r_iso*2/dis/np.pi*180]
-            cat_neighbors_rand = cat_neighbors_rand[abs(cat_neighbors_rand['DEC'] - dec_rand) < r_iso*2/dis/np.pi*180]
+            if cat_name == 'ELAIS_deep':
+                sph_coord_factor = 2
+            else:
+                sph_coord_factor = 1.1
+
+            cat_neighbors_rand = cat_neighbors_z_slice_rand[np.logical_and(abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < r_iso*sph_coord_factor/dis/np.pi*180, abs(cat_neighbors_z_slice_rand['DEC'] - dec_rand) < r_iso/dis/np.pi*180 )]
+
             coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
             if len(cat_neighbors_rand) == 0:
                 continue
@@ -173,7 +178,7 @@ all_z = False
 correct_masked = True
 save_results = True
 save_catalogs = False
-small_size_test = True
+small_size_test = False
 
 ssfq = sys.argv[1]
 z_min = eval(sys.argv[2])
@@ -297,7 +302,7 @@ for boot_iter in range(boot_num):
         cat_gal_copy = cat_gal
 
     # select massive galaxies
-    cat_massive_gal = cat_gal_copy[np.logical_and(cat_gal_copy[mass_keyname] > masscut_host, cat_gal_copy[mass_keyname] < masscut_host_high)]
+    cat_massive_gal = cat_gal_copy[cat_gal_copy[mass_keyname] > masscut_host] # lower mass cut
     cat_massive_z_slice = cat_massive_gal[np.logical_and(cat_massive_gal[zkeyname]>z_min, cat_massive_gal[zkeyname]<z_max)]
     print('massive gals rank_in_cat:', rank_in_cat, len(cat_massive_z_slice), max(cat_massive_z_slice[mass_keyname]))
 
@@ -331,6 +336,7 @@ for boot_iter in range(boot_num):
 
     # isolated massive galaxy sample
     cat_isolated_z_slice = cat_massive_z_slice[isolated_ids]
+    cat_isolated_z_slice = cat_isolated_z_slice[cat_isolated_z_slice[mass_keyname] < masscut_host_high] # upper mass cut
     coord_isolated_gal = SkyCoord(cat_isolated_z_slice['RA'] * u.deg, cat_isolated_z_slice['DEC'] * u.deg)
     print('isolated gals:', len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]), max(cat_isolated_z_slice[mass_keyname]))
     print('cat_random_non_proximity', len(cat_random_non_proximity))
@@ -339,16 +345,17 @@ for boot_iter in range(boot_num):
     if (rank_in_cat==0 and boot_iter == 0) and ssfq == 'all':
         cat_isolated_z_slice.write(path + cat_name + '_cen_' + str(masscut_host) + '_' + str(round(z_min, 1))+'.fits', overwrite=True)
 
-    if small_size_test:
-        cat_isolated_z_slice_torun = cat_isolated_z_slice[np.random.choice(np.arange(len(cat_isolated_z_slice)), size=min(len(cat_isolated_z_slice),9), replace=False)]
-    else:
-        cat_isolated_z_slice_torun = cat_isolated_z_slice
-
     # split massive gal sample 
     if rank_in_cat != cores_per_cat-1:
-        cat_isolated_z_slice = cat_isolated_z_slice[rank_in_cat*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names))) : (rank_in_cat+1)*int(len(cat_isolated_z_slice)  /(nProcs/len(cat_names)))]
+        cat_isolated_z_slice = cat_isolated_z_slice[rank_in_cat*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names))) : (rank_in_cat+1)*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names)))]
     else:
-        cat_isolated_z_slice = cat_isolated_z_slice[rank_in_cat*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names))) : (rank_in_cat+1)*int(len(cat_isolated_z_slice)  /(nProcs/len(cat_names)))]
+        cat_isolated_z_slice = cat_isolated_z_slice[rank_in_cat*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names))) : (rank_in_cat+1)*int(len(cat_isolated_z_slice)/(nProcs/len(cat_names)))]
+
+    # small scale test check
+    if small_size_test:
+        cat_isolated_z_slice_torun = cat_isolated_z_slice[np.random.choice(np.arange(len(cat_isolated_z_slice)), size=min(len(cat_isolated_z_slice),90), replace=False)]
+    else:
+        cat_isolated_z_slice_torun = cat_isolated_z_slice
     
     print('===rank:'+str(rank)+'===rank_in_cat=' + str(rank_in_cat) + '===z_min=' + str(round(z_min, 1)) + '===z_max=' + str(round(z_max, 1))+ '====='+cat_name+'==='+str(len(cat_isolated_z_slice))+'===')
     print('isolated gals, rank_in_cat:', rank_in_cat, len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]),max(cat_isolated_z_slice[mass_keyname]))
@@ -377,11 +384,18 @@ for boot_iter in range(boot_num):
 
         # prepare neighbors catalog
         cat_neighbors_z_slice = cat_gal_copy[abs(cat_gal_copy[zkeyname] - gal[zkeyname]) < sat_z_cut * 0.06 * (1 + gal[zkeyname])]
-        cat_neighbors = cat_neighbors_z_slice[np.logical_and(abs(cat_neighbors_z_slice['RA'] - gal['RA']) < 2 * r_iso / dis / np.pi * 180, abs(cat_neighbors_z_slice['DEC'] - gal['DEC']) < 2 * r_iso / dis / np.pi * 180 )]
+
+        if cat_name == 'ELAIS_deep':
+            sph_coord_factor = 2
+        else:
+            sph_coord_factor = 1.1
+
+        cat_neighbors = cat_neighbors_z_slice[np.logical_and(abs(cat_neighbors_z_slice['RA'] - gal['RA']) < sph_coord_factor * r_iso / dis / np.pi * 180, abs(cat_neighbors_z_slice['DEC'] - gal['DEC']) < r_iso / dis / np.pi * 180 )]
 
         # choose sats within r_high
         coord_neighbors = SkyCoord(cat_neighbors['RA'] * u.deg, cat_neighbors['DEC'] * u.deg)
         cat_neighbors = cat_neighbors[coord_neighbors.separation(coord_gal).degree < r_high / dis / np.pi * 180]
+        cat_neighbors = cat_neighbors[cat_neighbors['ID'] != gal['ID']]
         if len(cat_neighbors) == 0:  # central gals which has no companion
             continue
 
@@ -472,6 +486,11 @@ if len(mass_centrals) == isolated_counts and save_results:
     print(rank_in_cat,'avg number in bkg', ssfq, round(sum(smf_dist_bkg_avg)/isolated_counts))
     print(rank_in_cat,'avg number in sat', ssfq, round(sum(smf_dist_sat_avg)/isolated_counts))
     print(rank_in_cat,'isolated massive counts:', isolated_counts)
+
+    # print errors
+    print(smf_dist_avg)
+    print(np.sqrt(smf_dist_avg))
+    print(smf_dist_avg - smf_dist_inf)
 
     # save total smf (not corrected for bkg)
     smf_dist_avg = np.append(smf_dist_avg, smf_dist_inf)

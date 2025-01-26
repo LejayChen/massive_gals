@@ -39,17 +39,18 @@ for cat_name in cat_names:
             smf_sup = smf_with_error[1+2*bin_number:1+3*bin_number]
             # print('num of gals in rank', i, cat_name, result_type, round(sum(smf)/n_gals,1),n_gals,len(smf))
 
+            # SMFs are stacked, not divided by n_gal at this point
             smf_tot += smf   # stacked smf
             error_inf += (smf-smf_inf)**2
             error_sup += (smf_sup-smf)**2
             n_gals_tot += n_gals
 
         smf_tot = smf_tot / n_gals_tot # smf per central
-        smf_tot_inf = (smf_tot - np.sqrt(error_inf)) / n_gals_tot
-        smf_tot_sup = (smf_tot + np.sqrt(error_sup)) / n_gals_tot
+        smf_tot_inf = smf_tot - np.sqrt(error_inf) / n_gals_tot
+        smf_tot_sup = smf_tot + np.sqrt(error_sup) / n_gals_tot
         
         print('')
-        print(cat_name,result_type, round(sum(smf_tot),1), n_gals_tot,len(smf_tot))
+        print(cat_name,result_type, round(sum(smf_tot),1), n_gals_tot)
 
         smf_tot = np.append(smf_tot, smf_tot_inf)
         smf_tot = np.append(smf_tot, smf_tot_sup)
