@@ -24,17 +24,15 @@ def check_edge(ra_rand, dec_rand):
     else:
         return False
 
-def bkg_all_area(cat_gal_non_proximity_zslice, area_total):
-    counts_gals_rand = np.histogram(cat_gal_non_proximity_zslice[mass_keyname], weights=weights, bins=bin_edges)[0]
-    area_total_non_proximity = cat_random_bkg_pos/len(cat_random_nomask)*area_total
-    area_cen_aperture = np.pi*(r_high**2-r_low**2)/ (dis * np.pi / 180)**2
+# def bkg_all_area():
 
-    return counts_gals_rand * area_cen_aperture / area_total_non_proximity
+#     return 0
 
 def bkg(cat_random_bkg_pos, cat_neighbors_z_slice_rand, coord_isolated_gal_rand, mass_cen, count_bkg, n_per_central=1, bkg_size_factor = 1.5):
     global z, overlapping_factor
 
     cat_neighbors_z_slice_rand = cat_neighbors_z_slice_rand[np.logical_and(cat_neighbors_z_slice_rand[mass_keyname] > masscut_low,cat_neighbors_z_slice_rand[mass_keyname] < masscut_high)]
+    
     counts_gals_rand = np.zeros(bin_number)
     n = 0
     num_before_success = 0
@@ -56,55 +54,57 @@ def bkg(cat_random_bkg_pos, cat_neighbors_z_slice_rand, coord_isolated_gal_rand,
         ra_rand = cat_random_bkg_pos[id_rand]['ra']
         dec_rand = cat_random_bkg_pos[id_rand]['dec']
         coord_rand = SkyCoord(ra_rand, dec_rand, unit="deg")
+        idx, sep2d, dist3d = match_coordinates_sky(coord_rand, coord_isolated_gal_rand, nthneighbor=1)
 
         num_before_success += 1
         if num_before_success > max_iter:
             flag_bkg = 1
             break
 
-        if check_edge(ra_rand, dec_rand):
-            continue
+        if sep2d.degree > overlapping_factor*(1+1/bkg_size_factor)*r_iso/dis/np.pi*180:  # make sure the random pointing is away from any central galaxy (blank)
+            if check_edge(ra_rand, dec_rand):
+                continue
 
-        if cat_name == 'ELAIS_deep':
-            sph_coord_factor = 2
-        else:
-            sph_coord_factor = 1.1
-
-        cat_neighbors_rand = cat_neighbors_z_slice_rand[np.logical_and(abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < r_iso/bkg_size_factor*sph_coord_factor/dis/np.pi*180, abs(cat_neighbors_z_slice_rand['DEC'] - dec_rand) < r_iso/bkg_size_factor/dis/np.pi*180 )]
-
-        coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
-        if len(cat_neighbors_rand) == 0:
-            continue
-
-        # choose radial range
-        if r_low>0.0:
-            cat_neighbors_rand = cat_neighbors_rand[np.logical_and(coord_neighbors_rand.separation(coord_rand).degree < r_high/bkg_size_factor/dis/np.pi*180, coord_neighbors_rand.separation(coord_rand).degree > r_low /bkg_size_factor / dis / np.pi*180)]
-        else:
-            cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < r_high/bkg_size_factor/dis/np.pi*180]
-
-        if len(cat_neighbors_rand) == 0:
-            continue
-            counts_gals_rand += np.zeros(bin_number)
-        else:
-            mass_neighbors_rand = cat_neighbors_rand[mass_keyname]
-
-            if ssfq == 'all':
-                sfq_weights_rand = np.ones(len(mass_neighbors_rand))
-            elif ssfq == 'ssf':
-                sfq_weights_rand = cat_neighbors_rand[sfq_keyname]
+            if cat_name == 'ELAIS_deep':
+                sph_coord_factor = 2
             else:
-                sfq_weights_rand = 1 - cat_neighbors_rand[sfq_keyname]
+                sph_coord_factor = 1.1
 
-            # weights = np.array(sfq_weights_rand / completeness_est(mass_neighbors_rand, cat_neighbors_rand[sfq_keyname], z))
-            weights = np.array(sfq_weights_rand)
-            if not rel_scale:
-                counts_gals_rand += np.histogram(mass_neighbors_rand, weights=weights, bins=bin_edges)[0]
-                # print('bkg gal mass max',max(mass_neighbors_rand))
+            cat_neighbors_rand = cat_neighbors_z_slice_rand[np.logical_and(abs(cat_neighbors_z_slice_rand['RA'] - ra_rand) < r_iso/bkg_size_factor*sph_coord_factor/dis/np.pi*180, abs(cat_neighbors_z_slice_rand['DEC'] - dec_rand) < r_iso/bkg_size_factor/dis/np.pi*180 )]
+
+            coord_neighbors_rand = SkyCoord(cat_neighbors_rand['RA'] * u.deg, cat_neighbors_rand['DEC'] * u.deg)
+            if len(cat_neighbors_rand) == 0:
+                continue
+
+            # choose radial range
+            if r_low>0.0:
+                cat_neighbors_rand = cat_neighbors_rand[np.logical_and(coord_neighbors_rand.separation(coord_rand).degree < r_high/bkg_size_factor/dis/np.pi*180, coord_neighbors_rand.separation(coord_rand).degree > r_low /bkg_size_factor / dis / np.pi*180)]
             else:
-                rel_mass_neighbors_rand = mass_neighbors_rand - mass_cen
-                counts_gals_rand += np.histogram(rel_mass_neighbors_rand, weights=weights, bins=rel_bin_edges)[0]
+                cat_neighbors_rand = cat_neighbors_rand[coord_neighbors_rand.separation(coord_rand).degree < r_high/bkg_size_factor/dis/np.pi*180]
+
+            if len(cat_neighbors_rand) == 0:
+                continue
+                counts_gals_rand += np.zeros(bin_number)
+            else:
+                mass_neighbors_rand = cat_neighbors_rand[mass_keyname]
+
+                if ssfq == 'all':
+                    sfq_weights_rand = np.ones(len(mass_neighbors_rand))
+                elif ssfq == 'ssf':
+                    sfq_weights_rand = cat_neighbors_rand[sfq_keyname]
+                else:
+                    sfq_weights_rand = 1 - cat_neighbors_rand[sfq_keyname]
+
+                # weights = np.array(sfq_weights_rand / completeness_est(mass_neighbors_rand, cat_neighbors_rand[sfq_keyname], z))
+                weights = np.array(sfq_weights_rand)
+                if not rel_scale:
+                    counts_gals_rand += np.histogram(mass_neighbors_rand, weights=weights, bins=bin_edges)[0]
+                    print('bkg gal mass max',max(mass_neighbors_rand))
+                else:
+                    rel_mass_neighbors_rand = mass_neighbors_rand - mass_cen
+                    counts_gals_rand += np.histogram(rel_mass_neighbors_rand, weights=weights, bins=rel_bin_edges)[0]
                 
-        n = n + 1
+            n = n + 1
 
     # print(num_before_success)
     if n>0:
@@ -163,26 +163,14 @@ def completeness_est(mass_list, sfProb_list, z):
     except:
         return np.ones(len(mass_list))
 
-def Ms_to_r200(log_Ms,z): 
+def Ms_to_r200(log_Ms): 
+    M1 = 10 ** 12.52 # solar masses
+    Ms = 10**log_Ms # solar masses
+    Ms0 = 10 ** 10.916 # solar masses
+    beta = 0.457
+    delta = 0.566
+    gamma = 1.53
     rho_bar = 9.9e-30  # g/cm^3
-    if z>0.22 and z<0.48:
-        M1 = 10 ** 12.52 # solar masses
-        Ms0 = 10 ** 10.916 # solar masses
-        beta = 0.457
-        delta = 0.566
-        gamma = 1.53
-    elif z>=0.48 and z<0.74:
-        M1 = 10 ** 12.725 # solar masses
-        Ms0 = 10 ** 11.038 # solar masses
-        beta = 0.466
-        delta = 0.61
-        gamma = 1.95
-    elif z>=0.74 and z<1:
-        M1 = 10 ** 12.722 # solar masses
-        Ms0 = 10 ** 11.1 # solar masses
-        beta = 0.47
-        delta = 0.393
-        gamma = 2.51
     log_mh = np.log10(M1) + beta * np.log10(Ms / Ms0) + (Ms / Ms0) ** delta / (1 + (Ms / Ms0) ** (-1 * gamma)) - 0.5 # Leauthaud+2012
     r200 = ((3*10**log_mh*1.989e30*1e3)/(800*np.pi*rho_bar))**(1/3)/3.086e21 # in kpc
     return r200/1000  # in Mpc
@@ -285,6 +273,7 @@ cat_gal = cat_gal[cat_gal[sfq_keyname] <= 1.0]
 cat_gal = cat_gal[cat_gal[mass_keyname] >= masscut_low]
 cat_gal = cat_gal[cat_gal[mass_keyname] < masscut_high]
 
+
 # read in random point catalog
 cat_random = Table.read('/home/lejay/random_point_cat/'+cat_name + '_random_point.fits')
 cat_random = cat_random[cat_random['inside_hsc'] == 0]
@@ -295,12 +284,12 @@ else:
     cat_random = cat_random[cat_random['inside_u'] == 0]
 cat_random_nomask = np.copy(cat_random)
 cat_random = cat_random[cat_random['MASK'] != 0]
-area_total_list = [5.19, 4.27, 4.51, 2.63] # 'COSMOS_deep','DEEP_deep','ELAIS_deep','XMM-LSS_deep'
-area_total = area_total_list[rank % len(cat_names)]
 
 # trime cat_gal
 cat_gal.remove_columns(['snr_i','snr_r','snr_z','i_cmodel','isStar','inside_hsc','isCompact','i_compact_flag'])
-print(z_min,z_max,cat_name,rank_in_cat,len(cat_gal))
+
+print(z_min,z_max)
+print(cat_name,rank_in_cat,len(cat_gal))
 del cat
 
 #bootstrap resampling
@@ -331,16 +320,16 @@ for boot_iter in range(boot_num):
 
     # select massive galaxies
     cat_massive_gal = cat_gal_copy[cat_gal_copy[mass_keyname] > masscut_host] # lower mass cut
-    cat_massive_z_slice = cat_massive_gal[np.logical_and(cat_massive_gal[zkeyname]>z_min-1.5*sat_z_cut * 0.06 * (1 + z_min), cat_massive_gal[zkeyname]<z_max+1.5*sat_z_cut * 0.06 * (1 + z_max))]
+    cat_massive_z_slice = cat_massive_gal[np.logical_and(cat_massive_gal[zkeyname]>z_min-0.5, cat_massive_gal[zkeyname]<z_max+0.5)]
     print('massive gals rank_in_cat:', rank_in_cat, len(cat_massive_z_slice), max(cat_massive_z_slice[mass_keyname]))
 
     #select isolated massive galaxies
-    cat_gal_non_proximity = cat_gal['ID',zkeyname, mass_keyname,'RA','DEC']
+    cat_random_non_proximity = cat_random_nomask.copy()
     isolated_ids = []
     for gal_idx, gal in enumerate(cat_massive_z_slice):  
 
         if rel_riso:
-            r_high = Ms_to_r200(gal[mass_keyname],gal[zkeyname])
+            r_high = Ms_to_r200(gal[mass_keyname])
             r_iso =  r_high
 
         dis = cosmo.angular_diameter_distance(gal[zkeyname]).value
@@ -364,12 +353,17 @@ for boot_iter in range(boot_num):
             continue
         else:
             isolated_ids.append(gal_idx)
+            # random point catalog to select backgroun positions
+            coord_random_non_proximity = SkyCoord(cat_random_non_proximity['ra'] * u.deg, cat_random_non_proximity['dec'] * u.deg)
+            cat_random_non_proximity = cat_random_non_proximity[coord_random_non_proximity.separation(coord_gal).degree > overlapping_factor*(1+1/bkg_size_factor)*r_iso / dis / np.pi * 180]
 
     # isolated massive galaxy sample
     cat_isolated_z_slice_allmass = cat_massive_z_slice[isolated_ids]
     cat_isolated_z_slice = cat_isolated_z_slice_allmass[np.logical_and(cat_isolated_z_slice_allmass[zkeyname]>z_min, cat_isolated_z_slice_allmass[zkeyname]<z_max)]
     cat_isolated_z_slice = cat_isolated_z_slice[cat_isolated_z_slice[mass_keyname]<masscut_host_high]
+
     print('isolated gals:', len(cat_isolated_z_slice), min(cat_isolated_z_slice[mass_keyname]), max(cat_isolated_z_slice[mass_keyname]))
+    print('cat_random_non_proximity', len(cat_random_non_proximity))
 
     # write isolated galaxy catalog to file
     if (rank_in_cat==0 and boot_iter == 0) and ssfq == 'all':
@@ -405,7 +399,7 @@ for boot_iter in range(boot_num):
     for gal in cat_isolated_z_slice_torun:  # [np.random.randint(len(cat_isolated_z_slice), size=300)]:
 
         if rel_riso:
-            r_high = Ms_to_r200(gal[mass_keyname,gal[zkeyname]])
+            r_high = Ms_to_r200(gal[mass_keyname])
             r_iso =  r_high
 
         # cut on central SF/Q
@@ -473,16 +467,8 @@ for boot_iter in range(boot_num):
         # print(gal['ID'],sum(sat_counts), gal[mass_keyname], max(cat_neighbors[mass_keyname]))
 
         # positions of central gals to avoid in bkg
-        cat_isolated_zgal_cut = cat_isolated_z_slice_allmass[abs(cat_isolated_z_slice_allmass[zkeyname] - gal[zkeyname]) < 1.5 * sat_z_cut * 0.06 * (1 + gal[zkeyname])]
-        cat_random_non_proximity = cat_random_nomask.copy()
-        for gal_iso in cat_isolated_zgal_cut:
-            # random point catalog to select backgroun positions
-            coord_isolated_zgal = SkyCoord(gal_iso['RA'] * u.deg, gal_iso['DEC'] * u.deg)
-            coord_random_non_proximity = SkyCoord(cat_random_non_proximity['ra'] * u.deg, cat_random_non_proximity['dec'] * u.deg)
-            cat_random_non_proximity = cat_random_non_proximity[coord_random_non_proximity.separation(coord_isolated_zgal).degree > overlapping_factor*(1+1/bkg_size_factor)*r_iso / dis / np.pi * 180]
-            # coord_gal_non_proximity = SkyCoord(cat_gal_non_proximity['RA'] * u.deg, cat_gal_non_proximity['DEC'] * u.deg)
-            # cat_gal_non_proximity = cat_gal_non_proximity[coord_gal_non_proximity.separation(coord_gal).degree > overlapping_factor*(1+1/bkg_size_factor)*r_iso / dis / np.pi * 180]
-
+        cat_isolated_zgal_cut = cat_isolated_z_slice_allmass[abs(cat_isolated_z_slice_allmass[zkeyname] - gal[zkeyname]) < 2 * sat_z_cut * 0.06 * (1 + gal[zkeyname])]
+        coord_isolated_zgal_cut = SkyCoord(cat_isolated_zgal_cut['RA'] * u.deg, cat_isolated_zgal_cut['DEC'] * u.deg)
         if overlap_exclude:
             num_before_success, sat_bkg, flag_bkg = bkg(cat_random_non_proximity, cat_neighbors_z_slice, coord_isolated_zgal_cut, gal[mass_keyname], count_bkg, n_per_central=n_per_central)
         else:
@@ -492,10 +478,6 @@ for boot_iter in range(boot_num):
             count_bkg += 1
             smf_dist_bkg += sat_bkg
             print(gal['ID'],sum(sat_counts), gal[mass_keyname],max(cat_neighbors[mass_keyname]), sum(sat_bkg), num_before_success)
-
-        # secound bkg method
-        # cat_gal_non_proximity_zslice = cat_gal_non_proximity[(cat_gal_non_proximity[zkeyname] - gal[zkeyname]) < sat_z_cut * 0.06 * (1 + gal[zkeyname])]
-        # sat_bkg = bkg_all_area(cat_gal_non_proximity_zslice, area_total)
 
     # add results from this bootstrap iteration
     if count_bkg==0:
