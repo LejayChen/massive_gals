@@ -2,6 +2,7 @@ import numpy as np
 import sys
 import os
 import time
+from astropy.table import vstack, Table
 
 cat_names = ['COSMOS_deep','DEEP_deep','ELAIS_deep','XMM-LSS_deep']
 cores_per_cat = 36 // len(cat_names)
@@ -18,15 +19,26 @@ csfq = sys.argv[7]
 r_low = eval(sys.argv[8]) # Mpc
 r_high = eval(sys.argv[9]) # Mpc
 rel_riso = bool(eval(sys.argv[10]))
+rel_mscale = bool(eval(sys.argv[11]))
+r_factor = eval(sys.argv[12])
 
 print('relative r_iso?', rel_riso)
 
 for cat_name in cat_names:
     for result_type in ['total', 'sat', 'bkg']:
-        if not rel_riso:
+        if (not rel_riso) and (not rel_mscale):
             file_name_base = 'smf_' + cat_name + '_cen_' + str(masscut_host) +'_' + str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + csfq + '_' + ssfq + '_' + z_min + '_' + result_type
-        else:
+        elif rel_riso and rel_mscale:
             file_name_base = 'smf_' + cat_name + '_cen_' + str(masscut_host) + '_rel_mscale_' + str(r_low) + '_r200_' + str(masscut_low) + '_' + csfq + '_' + ssfq + '_' + z_min +  '_' + result_type
+            
+        elif rel_mscale:
+            file_name_base = 'smf_' + cat_name + '_cen_' + str(masscut_host) +'_rel_mscale_' + str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + csfq + '_' + ssfq + '_' + z_min + '_' + result_type
+        elif rel_riso:
+            if r_factor != 1.0:
+                r_factor_infilename = str(r_factor)
+            else:
+                r_factor_infilename = ''
+            file_name_base = 'smf_' + cat_name + '_cen_' + str(masscut_host) + '_' + str(r_low) + '_'+r_factor_infilename+'r200_' + str(masscut_low) + '_' + csfq + '_' + ssfq + '_' + z_min + '_' + result_type
 
         smf_tot = np.zeros(bin_number)
         smf_tot_inf = np.zeros(bin_number)
@@ -60,6 +72,7 @@ for cat_name in cat_names:
         print('######')
         print(cat_name,result_type, round(sum(smf_tot),1), n_gals_tot)
         print(smf_tot)
+        print(smf_tot_inf)
 
         smf_tot = np.append(smf_tot, smf_tot_inf)
         smf_tot = np.append(smf_tot, smf_tot_sup)
@@ -69,13 +82,15 @@ for cat_name in cat_names:
         print(cat_name, result_type, 'stacked')
         # os.system('rm ' + scratch_path + file_name_base + '_[0-9].npy')  # remove temporary files
 
-    # stack central mass list
-    # if ssfq == 'all':
-    #     cen_mass_list_stack = np.array([])
-    #     file_name_base_cen =  str(r_low) + '_'+str(r_high) + '_' + str(masscut_low) + '_' + str(csfq) + '_' + z_min 
-    #     for i in range(cores_per_cat):
-    #         cen_mass_list = np.load(scratch_path + cat_name + '_'+ file_name_base_cen + '_cen_mass_' + str(i) + '.npy')
-    #         cen_mass_list_stack = np.append(cen_mass_list_stack,cen_mass_list)
-    #     np.save(path + cat_name + '_cen_masslist_' + str(masscut_host) + '_'+ file_name_base_cen + '.npy', cen_mass_list_stack)
-        # os.system('rm ' + scratch_path + cat_name + '_'+ file_name_base_cen + '_cen_mass_[0-9].npy')  # remove temporary files
+    # stack central catalog
+    if csfq == 'all' and ssfq == 'all':
+        file_name_base_cen =  '_cen_' + str(masscut_host) + '_' + z_min 
+        for i in range(cores_per_cat):
+            cen_cat = Table.read(scratch_path + cat_name + file_name_base_cen + '_' + str(i)  + '.fits')
+            if i==0:
+                cen_cat_combine = cen_cat
+            else:
+                cen_cat_combine = vstack([cen_cat_combine,cen_cat])
+        cen_cat_combine.write(path + cat_name + file_name_base_cen + '.fits', overwrite=True)
+        # os.system('rm ' + scratch_path + cat_name + '_'+ file_name_base_cen + '_[0-9].fits')  # remove temporary files
 
